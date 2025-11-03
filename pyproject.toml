@@ -1,7 +1,7 @@
 [project]
 name = "snowviz"
 version = "0.1.0"
-description = "Add your description here"
+description = "Application de visualisation de données météorologiques (nivologie)."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []
