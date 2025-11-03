@@ -12,6 +12,19 @@ OUT_FILE = OUT_DIR / "stations.json"
 ID_KEY = "id"
 NAME_KEY = "nom"
 KEEP_KEYS = ("lon", "lat", "alt")
+SCALE_KEY = "_scales"
+_VALID_SCALES = {"infrahoraire-6m", "horaire", "quotidienne"}
+
+def _extract_scales(item: dict) -> set:
+    """Retourne un set des pas valides à partir de _scales ou _scale."""
+    out = set()
+    v = item.get("_scales")
+    if isinstance(v, list):
+        out.update(s for s in v if s in _VALID_SCALES)
+    v = item.get("_scale")
+    if isinstance(v, str) and v in _VALID_SCALES:
+        out.add(v)
+    return out
 
 # regex to turn " d Allevard" -> "d'Allevard" (and same for l/L)
 _RE_D_APOST = re.compile(r"\b([dDlL])\s+([A-Za-zÀ-ÖØ-öø-ÿ])")
@@ -66,12 +79,16 @@ def capitalize_name(normalized: str) -> str:
     return " ".join(out_parts)
 
 def pick_better(existing: dict, candidate: dict) -> dict:
-    # prefer non-null lon/lat/alt
+    # fusion lon/lat/alt
     for k in KEEP_KEYS:
         ex = existing.get(k)
         ca = candidate.get(k)
         if (ex is None or ex == "") and (ca is not None and ca != ""):
             existing[k] = ca
+    # fusion des pas (_scales comme set)
+    existing.setdefault(SCALE_KEY, set())
+    candidate.setdefault(SCALE_KEY, set())
+    existing[SCALE_KEY].update(candidate[SCALE_KEY])
     return existing
 
 def main() -> None:
@@ -97,18 +114,31 @@ def main() -> None:
                 continue
             raw_name = item.get(NAME_KEY) or ""
             name = normalize_name(raw_name)
+
             entry = {"id": sid, "nom": name}
             for k in KEEP_KEYS:
                 if k in item:
                     entry[k] = item[k]
+
+            # initialise _scales comme set
+            entry[SCALE_KEY] = _extract_scales(item)
+
             if sid in by_id:
                 by_id[sid] = pick_better(by_id[sid], entry)
             else:
                 by_id[sid] = entry
 
+
     out_list = [by_id[k] for k in sorted(by_id.keys())]
     for e in out_list:
         e["nom"] = capitalize_name(e.get("nom", ""))
+        # convertit set -> liste ordonnée
+        sc = e.get(SCALE_KEY, set())
+        if isinstance(sc, set):
+            e[SCALE_KEY] = sorted(sc)
+        # nettoie toute trace de _scale unitaire si présent
+        if "_scale" in e:
+            del e["_scale"]
 
     filtered = []
     for e in out_list:

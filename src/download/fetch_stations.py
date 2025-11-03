@@ -49,6 +49,27 @@ def _headers_json() -> Dict[str, str]:
         "authorization": f"Bearer {token}",
     }
 
+def _annotate_with_scale(data, scale: str):
+    """
+    Ajoute au(x) dictionnaire(s) retourné(s) par l'API:
+      - _scale: le pas de temps de CE fichier (provenance) : jetable ensuite
+      - _scales: liste des pas connus pour cet objet (utile si fusion ultérieure)
+    Ne touche qu'aux dict; laisse le reste intact.
+    """
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict):
+                item["_scale"] = scale
+                prev = item.get("_scales", [])
+                if scale not in prev:
+                    item["_scales"] = [*prev, scale]
+    elif isinstance(data, dict):
+        data["_scale"] = scale
+        prev = data.get("_scales", [])
+        if scale not in prev:
+            data["_scales"] = [*prev, scale]
+    return data
+
 def fetch_stations_for_scale(
     department: int,
     scale: str,
@@ -89,6 +110,7 @@ def fetch_stations_for_scale(
         resp.raise_for_status()
 
     data = resp.json()
+    data = _annotate_with_scale(data, scale)
 
     out_dir = Path(save_dir) / scale
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -96,6 +118,7 @@ def fetch_stations_for_scale(
         json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     return data
+
 
 def fetch_all_scales_all_departments(
     departments: List[int] = DEPARTMENTS,
