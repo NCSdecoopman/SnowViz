@@ -1,8 +1,11 @@
 # src/utils/combine_stations.py
 # Script: combine all stations JSON (different scales/depts) into one deduplicated file.
 
+import os
+import argparse
 import json
 import re
+import math
 from pathlib import Path
 
 SRC_DIR = Path("data/metadonnees/download/stations")
@@ -33,7 +36,6 @@ _RE_REMOVE_NIVO = re.compile(r"[-_]?\bNIVO(?:SE)?\b", flags=re.I)
 # collapse multiple spaces
 _RE_SPACES = re.compile(r"\s+")
 
-
 def normalize_name(raw: str) -> str:
     if raw is None:
         return ""
@@ -42,7 +44,6 @@ def normalize_name(raw: str) -> str:
     s = _RE_REMOVE_NIVO.sub("", s)
     s = _RE_SPACES.sub(" ", s).strip()
     return s.lower()
-
 
 _PARTICLES = {
     "de", "du", "des", "la", "le", "les", "et", "à", "au", "aux", "sur",
@@ -78,6 +79,38 @@ def capitalize_name(normalized: str) -> str:
         out_parts.append("-".join(out_hy))
     return " ".join(out_parts)
 
+def _coerce_alt_to_int(v):
+    """Convertit l'altitude en int ou None.
+    - Gère int, float, str avec séparateurs, suffixe 'm', virgule.
+    - Arrondit à l'entier le plus proche.
+    """
+    if v is None or v == "":
+        return None
+    if isinstance(v, int):
+        return v
+    if isinstance(v, float):
+        if math.isnan(v):
+            return None
+        return int(round(v))
+    if isinstance(v, str):
+        s = v.strip().lower()
+        # retire 'm' et espaces fines, points, etc.
+        s = s.replace("m", "")
+        # uniformise virgules en points
+        s = s.replace(",", ".")
+        # supprime tout sauf chiffres, signe et point
+        s = re.sub(r"[^\d\.\-]", "", s)
+        if not s:
+            return None
+        try:
+            f = float(s)
+            if math.isnan(f):
+                return None
+            return int(round(f))
+        except ValueError:
+            return None
+    return None
+
 def pick_better(existing: dict, candidate: dict) -> dict:
     # fusion lon/lat/alt
     for k in KEEP_KEYS:
@@ -91,7 +124,7 @@ def pick_better(existing: dict, candidate: dict) -> dict:
     existing[SCALE_KEY].update(candidate[SCALE_KEY])
     return existing
 
-def main() -> None:
+def main(alt_select: int) -> None:
     files = list(SRC_DIR.glob("**/stations_*.json"))
     if not files:
         print(f"No input files found under {SRC_DIR}")
@@ -114,25 +147,33 @@ def main() -> None:
                 continue
             raw_name = item.get(NAME_KEY) or ""
             name = normalize_name(raw_name)
-
             entry = {"id": sid, "nom": name}
-            for k in KEEP_KEYS:
-                if k in item:
-                    entry[k] = item[k]
-
-            # initialise _scales comme set
+            # Copie des champs clés
+            if "lon" in item:
+                entry["lon"] = item["lon"]
+            if "lat" in item:
+                entry["lat"] = item["lat"]
+            if "alt" in item:
+                entry["alt"] = _coerce_alt_to_int(item["alt"])
+            # Ajoute posteOuvert si présent
+            if "posteOuvert" in item:
+                entry["posteOuvert"] = item["posteOuvert"]
+            # Initialise _scales
             entry[SCALE_KEY] = _extract_scales(item)
-
             if sid in by_id:
                 by_id[sid] = pick_better(by_id[sid], entry)
             else:
                 by_id[sid] = entry
 
-
+    # post-traitement et filtrage
     out_list = [by_id[k] for k in sorted(by_id.keys())]
     for e in out_list:
         e["nom"] = capitalize_name(e.get("nom", ""))
-        # convertit set -> liste ordonnée
+
+        # normalise altitude une dernière fois et garde un int ou None
+        e["alt"] = _coerce_alt_to_int(e.get("alt"))
+
+        # convertit set -> liste ordonnée pour _scales
         sc = e.get(SCALE_KEY, set())
         if isinstance(sc, set):
             e[SCALE_KEY] = sorted(sc)
@@ -142,17 +183,29 @@ def main() -> None:
 
     filtered = []
     for e in out_list:
-        alt = e.get("alt")
-        try:
-            alt_val = float(alt) if alt not in (None, "") else None
-        except (ValueError, TypeError):
-            alt_val = None
-        if alt_val is not None and alt_val > 500:
+        alt_val = e.get("alt")  # déjà int ou None
+        poste_ouvert = e.get("posteOuvert", False)  # Par défaut False si absent
+        if alt_val is not None and alt_val >= alt_select and poste_ouvert:
             filtered.append(e)
+
+    # --- supprimer la colonne 'posteOuvert' avant écriture ---
+    for e in filtered:
+        e.pop("posteOuvert", None)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     OUT_FILE.write_text(json.dumps(filtered, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"Combined {len(files)} files -> {len(filtered)} unique stations (alt > 500 m) saved to {OUT_FILE}")
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--alt_select",
+        type=int,
+        required=True,  # ← obligatoire
+        help="seuil altitude strict '>=' pour sélectionner les stations (ex: 2000)"
+    )
+    args = parser.parse_args()
+
+    if args.alt_select is None:
+        raise ValueError("Paramètre '--alt_select' requis et manquant.")
+
+    main(alt_select=args.alt_select)
