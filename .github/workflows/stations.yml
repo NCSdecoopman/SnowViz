@@ -2,9 +2,13 @@ name: Stations Weekly
 
 on:
   schedule:
-    - cron: '59 21 * * 5'  # ~23:59 Europe/Paris en été (UTC+2)
-    - cron: '59 22 * * 5'  # ~23:59 Europe/Paris en hiver (UTC+1)
+    - cron: '59 21 * * 5'
+    - cron: '59 22 * * 5'
   workflow_dispatch: {}
+
+concurrency:
+  group: stations-weekly
+  cancel-in-progress: false
 
 permissions:
   id-token: write
