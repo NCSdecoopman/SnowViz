@@ -41,19 +41,7 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Fetch → validate → count → upload (no files)
-        shell: bash
-        env:
-          PYTHONUNBUFFERED: "1"
+      - name: Fetch stations → DynamoDB (pipe)
         run: |
-          set -euo pipefail
-
-          python -u -m src.download.fetch_stations \
-            --scales "quotidienne" \
-            --departments "38,73,74" \
-          | tee >(head -n 6 >&2) \
-          | awk 'NR>1{print; n++} END{printf "CSV_LINES=%d\n", n > "/dev/stderr"; if(n==0) exit 1}' \
-          | python -u -m src.upload.stdin_to_dynamodb --table Stations --pk id --format csv
-
-
-
+          python -m src.download.fetch_stations
+          | python -m src.upload.stdin_to_dynamodb --table Stations --pk id

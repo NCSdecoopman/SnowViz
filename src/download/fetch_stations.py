@@ -1,58 +1,36 @@
 #!/usr/bin/env python3
-# fetch_stations_stream_csv.py
-# But:
-#   - Récupérer les stations par échelle et département depuis DPClim
-#   - Dédupliquer par id et fusionner les _scales
-#   - Filtrer par altitude (ALT_SELECT, env)
-#   - Émettre UNIQUEMENT du CSV sur stdout: id,nom,lon,lat,alt,_scales
-#   - Logs: stderr + logs/stations/AAAAMMJJHHMMSS.log
-#
-# Remplace l’usage de combine_stations + fichiers intermédiaires.
+# Récupère les listes de stations par département et échelle (DPClim).
+# Logs dans logs/stations/AAAAMMJJHHMMSS.log
+# Stdout: CSV "id,nom,lon,lat,alt,_scales" issu du fichier fusionné.
 
 import argparse
 import os
-import sys
 import json
-import csv
 import time
+import csv
 from pathlib import Path
+from typing import Dict, List, Union, Tuple
 from collections import deque
 from datetime import datetime, timezone
-from typing import Dict, List
 import requests
+from ..api.token_provider import get_api_key, clear_token_cache
+from ..utils.combine_stations import main as combine_stations
 
-# --- Config (env + défauts) ---
+# Configuration
 BASE_URL = os.getenv("METEO_BASE_URL", "https://public-api.meteofrance.fr/public/DPClim/v1")
-ALT_SELECT = float(os.getenv("ALT_SELECT", "1000"))
-MAX_RPM = int(os.getenv("METEO_MAX_RPM", "50"))
-RATE_PERIOD = 60.0
-
+SAVE_DIR = Path(os.getenv("METEO_SAVE_DIR", "data/metadonnees/download/stations"))
+COMBINED_PATH = Path("data/metadonnees/stations.json")
+ALT_SELECT = int(os.getenv("ALT_SELECT", "1000"))
+DEPARTMENTS = [38, 73, 74]
 SCALES = {
     "infrahoraire-6m": "/liste-stations/infrahoraire-6m",
     "horaire": "/liste-stations/horaire",
     "quotidienne": "/liste-stations/quotidienne",
 }
+MAX_RPM = int(os.getenv("METEO_MAX_RPM", "50"))
+RATE_PERIOD = 60.0
 
-# --- Auth ---
-from ..api.token_provider import get_api_key, clear_token_cache  # noqa: E402
-
-# --- Logs fichier + stderr ---
-def _init_log_file() -> Path:
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    p = Path("logs/stations")
-    p.mkdir(parents=True, exist_ok=True)
-    return p / f"{ts}.log"
-
-_LOG_PATH = _init_log_file()
-
-def _log(msg: str) -> None:
-    # fichier
-    with _LOG_PATH.open("a", encoding="utf-8") as fh:
-        fh.write(msg.rstrip() + "\n")
-    # stderr
-    print(msg, file=sys.stderr)
-
-# --- Rate limiting basique ---
+# Rate limiter
 class RateLimiter:
     def __init__(self, max_calls: int, period_sec: float):
         self.max_calls = max_calls
@@ -71,154 +49,156 @@ class RateLimiter:
 
 _rl = RateLimiter(MAX_RPM, RATE_PERIOD)
 
+# Logging
+def _init_log_file() -> Path:
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    logdir = Path("logs/stations")
+    logdir.mkdir(parents=True, exist_ok=True)
+    return logdir / f"{ts}.log"
+
+_LOG_PATH = _init_log_file()
+
+def _log(msg: str) -> None:
+    with _LOG_PATH.open("a", encoding="utf-8") as fh:
+        fh.write(msg.rstrip() + "\n")
+
+# HTTP helpers
 def _headers_json() -> Dict[str, str]:
     token = get_api_key(use_cache=True)
     return {"accept": "application/json", "authorization": f"Bearer {token}"}
 
-def _annotate_with_scale(items, scale: str):
-    # Ajoute _scale et fusionne _scales si présent
-    for it in items:
-        if not isinstance(it, dict):
-            continue
-        prev = it.get("_scales") or []
+# Annotate with scale
+def _annotate_with_scale(data, scale: str):
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict):
+                item["_scale"] = scale
+                prev = item.get("_scales", [])
+                if scale not in prev:
+                    item["_scales"] = [*prev, scale]
+    elif isinstance(data, dict):
+        data["_scale"] = scale
+        prev = data.get("_scales", [])
         if scale not in prev:
-            it["_scales"] = [*prev, scale]
-
-def _fetch_one(dept: int, scale: str) -> List[dict]:
-    # Requête DPClim robuste avec retry token et 429
-    url = f"{BASE_URL}{SCALES[scale]}"
-    params = {"id-departement": dept}
-    _rl.wait()
-    r = requests.get(url, headers=_headers_json(), params=params, timeout=30)
-
-    if r.status_code == 204:
-        raise RuntimeError(f"{scale} dept {dept}: 204 No Content")
-
-    if r.status_code in (401, 403):
-        clear_token_cache()
-        _rl.wait()
-        r = requests.get(url, headers=_headers_json(), params=params, timeout=30)
-        r.raise_for_status()
-    elif r.status_code == 429:
-        retry_after = r.headers.get("Retry-After", "60")
-        time.sleep(float(retry_after))
-        _rl.wait()
-        r = requests.get(url, headers=_headers_json(), params=params, timeout=30)
-        r.raise_for_status()
-    else:
-        r.raise_for_status()
-
-    data = r.json()
-    if not isinstance(data, list):
-        return []
-
-    _annotate_with_scale(data, scale)
+            data["_scales"] = [*prev, scale]
     return data
 
-def _merge_in_memory(departments: List[int], scales: List[str]) -> Dict[int, dict]:
-    """
-    Déduplique par id. Conserve nom/lon/lat/alt du premier vu.
-    Fusionne _scales. Retourne dict {id: station_dict}
-    """
-    merged: Dict[int, dict] = {}
-    errors = 0
+# Fetch stations for a scale and department
+def fetch_stations_for_scale(department: int, scale: str) -> list:
+    if scale not in SCALES:
+        raise ValueError(f"Échelle inconnue: {scale}")
+    url = f"{BASE_URL}{SCALES[scale]}"
+    params = {"id-departement": department}
+    _rl.wait()
+    resp = requests.get(url, headers=_headers_json(), params=params, timeout=30)
+
+    # Handle errors
+    if resp.status_code == 204:
+        raise RuntimeError(f"{scale} dept {department}: 204 No Content")
+    if resp.status_code in (401, 403):
+        clear_token_cache()
+        _rl.wait()
+        resp = requests.get(url, headers=_headers_json(), params=params, timeout=30)
+        resp.raise_for_status()
+    elif resp.status_code == 429:
+        retry_after = resp.headers.get("Retry-After", "60")
+        time.sleep(float(retry_after))
+        _rl.wait()
+        resp = requests.get(url, headers=_headers_json(), params=params, timeout=30)
+        resp.raise_for_status()
+    else:
+        resp.raise_for_status()
+
+    data = resp.json()
+    data = _annotate_with_scale(data, scale)
+    out_dir = Path(SAVE_DIR) / scale
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / f"stations_{department}.json").write_text(
+        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return data
+
+# Main orchestrator
+def fetch_all_scales_all_departments(departments: List[int], scales: List[str]):
+    results = {s: {} for s in scales}
+    counts = {s: {} for s in scales}
+    conn_errors = 0
+
     for s in scales:
-        if s not in SCALES:
-            _log(f"[warn] échelle inconnue ignorée: {s}")
-            continue
         for d in departments:
             try:
-                items = _fetch_one(d, s)
-                _log(f"[count] scale={s} dept={d} items={len(items)}")
+                data = fetch_stations_for_scale(d, s)
+                n = len(data) if isinstance(data, list) else 0
+                results[s][d] = data
+                counts[s][d] = n
             except Exception as e:
-                errors += 1
+                results[s][d] = {"error": str(e)}
+                counts[s][d] = 0
+                conn_errors += 1
                 _log(f"[error] scale={s} dept={d} -> {e}")
-                items = []
 
-            for st in items:
-                sid = st.get("id")
-                if sid is None:
-                    continue
-                try:
-                    sid_int = int(sid)
-                except Exception:
-                    # ids non numériques: garder tel quel en clé str
-                    sid_int = sid
+    return results, counts, conn_errors
 
-                # Premier vu: copier champs utiles
-                if sid_int not in merged:
-                    merged[sid_int] = {
-                        "id": sid_int,
-                        "nom": st.get("nom"),
-                        "lon": st.get("lon"),
-                        "lat": st.get("lat"),
-                        "alt": st.get("alt"),
-                        "_scales": list(st.get("_scales") or []),
-                    }
-                else:
-                    # Fusion _scales
-                    prev = merged[sid_int].get("_scales") or []
-                    cur = st.get("_scales") or []
-                    merged[sid_int]["_scales"] = sorted(set(prev).union(cur))
+# Print merged data as CSV
+def _print_merged_as_csv(path: Path) -> None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        data = []
 
-    _log(f"[merge] unique_ids={len(merged)} errors={errors}")
-    return merged
+    sysout = os.sys.stdout
+    sysout.write("id,nom,lon,lat,alt,_scales\n")
 
-def _emit_csv(merged: Dict[int, dict], min_alt: float) -> int:
-    """
-    Écrit sur stdout: CSV header + lignes.
-    Filtre alt >= min_alt si alt numérique, sinon garde la ligne.
-    Retourne le nombre de lignes émises (hors header).
-    """
-    w = csv.writer(sys.stdout, lineterminator="\n")
-    w.writerow(["id", "nom", "lon", "lat", "alt", "_scales"])
+    for st in (data or []):
+        sid = st.get("id", "")
+        nom = st.get("nom", "")
+        lon = st.get("lon", "")
+        lat = st.get("lat", "")
+        alt = st.get("alt", "")
+        scales = st.get("_scales", [])
 
-    n = 0
-    for st in merged.values():
-        alt = st.get("alt")
-        try:
-            alt_val = float(alt)
-            if alt_val < min_alt:
-                continue
-        except Exception:
-            # alt manquante ou non numérique -> on ne filtre pas
-            pass
+        scales_json = json.dumps(scales, ensure_ascii=False, separators=(",", ":"))
+        nom_safe = (str(nom) or "").replace(",", " ")
+        line = f"{sid},{nom_safe},{lon},{lat},{alt},{scales_json}\n"
+        sysout.write(line)
 
-        # Sécurité sur nom et scales sérialisés
-        nom = str(st.get("nom") or "").replace(",", " ")
-        scales_json = json.dumps(st.get("_scales") or [], ensure_ascii=False, separators=(",", ":"))
-
-        w.writerow([
-            st.get("id", ""),
-            nom,
-            st.get("lon", ""),
-            st.get("lat", ""),
-            st.get("alt", ""),
-            scales_json
-        ])
-        n += 1
-
-    _log(f"[emit] csv_rows={n}")
-    return n
-
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--scales", type=lambda s: [x.strip() for x in s.split(",")], default=["quotidienne"])
-    p.add_argument("--departments", type=lambda s: [int(x) for x in s.split(",")], default=[38, 73, 74])
-    p.add_argument("--min-alt", type=float, default=ALT_SELECT, help="filtre alt >= min-alt")
-    args = p.parse_args()
-
-    _log(f"[run] start min_alt={args.min_alt} scales={args.scales} departments={args.departments}")
-
-    merged = _merge_in_memory(args.departments, args.scales)
-    rows = _emit_csv(merged, args.min_alt)
-
-    if rows == 0:
-        # Permet de faire échouer un pipeline si rien à émettre
-        print("id,nom,lon,lat,alt,_scales")  # garantit un header
-        _log("[warn] no rows emitted (post-filter)")
-        # exit 0 si tu veux éviter l'échec CI
-        # sys.exit(1)
-
+# Main
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--scales", type=lambda s: [x.strip() for x in s.split(",")], default=["quotidienne"])
+    parser.add_argument("--departments", type=lambda s: [int(x) for x in s.split(",")], default=[38, 73, 74])
+    args = parser.parse_args()
+
+    _log(f"[run] start altitude={ALT_SELECT} scales={args.scales} departments={args.departments}")
+    res, counts, conn_errors = fetch_all_scales_all_departments(args.departments, args.scales)
+
+    for s in args.scales:
+        total_scale = sum(counts[s].get(d, 0) for d in args.departments)
+        for d in args.departments:
+            _log(f"[count] scale={s} dept={d} items={counts[s].get(d, 0)}")
+        _log(f"[count] scale={s} total_items={total_scale}")
+
+    fused_ok = True
+    try:
+        combine_stations(alt_select=ALT_SELECT)
+    except Exception as e:
+        fused_ok = False
+        _log(f"[combine] error: {e}")
+
+    fused_n = 0
+    if fused_ok and COMBINED_PATH.exists():
+        try:
+            fused = json.loads(COMBINED_PATH.read_text(encoding="utf-8"))
+            fused_n = len(fused) if isinstance(fused, list) else 0
+        except Exception as e:
+            _log(f"[combine] read_error: {e}")
+            fused_ok = False
+
+    _log(f"[errors] connection_errors={conn_errors}")
+    _log(f"[fusion] ok={fused_ok} count={fused_n} path={COMBINED_PATH}")
+
+    if fused_ok and fused_n > 0:
+        _print_merged_as_csv(COMBINED_PATH)
+    else:
+        writer = csv.writer(os.sys.stdout, lineterminator="\n")
+        writer.writerow(["id", "nom", "lon", "lat", "alt", "_scales"])

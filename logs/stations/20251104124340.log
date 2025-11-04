@@ -1,0 +1,7 @@
+[run] start altitude=1000 scales=['quotidienne'] departments=[38, 73, 74]
+[count] scale=quotidienne dept=38 items=255
+[count] scale=quotidienne dept=73 items=261
+[count] scale=quotidienne dept=74 items=185
+[count] scale=quotidienne total_items=701
+[errors] connection_errors=0
+[fusion] ok=True count=210 path=data\metadonnees\stations.json
