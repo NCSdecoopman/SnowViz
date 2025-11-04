@@ -11,9 +11,13 @@ on:
         required: false
         default: "1"
 
+concurrency:
+  group: observations-daily
+  cancel-in-progress: false
+
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 jobs:
   fetch-observations:
@@ -53,24 +57,54 @@ jobs:
           [ -z "$DBACK" ] && DBACK="1"
           echo "YMD=$(date -u -d "$DBACK days ago" +%F)" >> $GITHUB_OUTPUT
 
-      - name: Fetch J-X → DynamoDB (pipe)
+      - name: Fetch J-X → DynamoDB (pipe) + tee CSV
         run: |
+          set -euxo pipefail
+          mkdir -p logs/observations
           python -m src.download.fetch_observations \
             --date "${{ steps.date.outputs.YMD }}" \
             --stations data/metadonnees/stations.json \
             --logdir logs/observations \
+          | tee logs/observations/jx-${{ steps.date.outputs.YMD }}.csv \
           | python -m src.upload.stdin_to_dynamodb \
               --table Observations --pk id --sk date
+
+      - name: Upload logs + CSV as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: observations-${{ github.run_id }}
+          path: |
+            logs/observations/*.log
+            logs/observations/*.csv
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Cleanup missing registry (keep 11 days)
         run: |
           python -m src.utils.cleanup_missing_observations --days 11
 
-      - name: Retry missing → DynamoDB (pipe)
+      - name: Retry missing → DynamoDB (pipe) + tee CSV
+        # fetch_missing renvoie RC=1 s'il reste des manquants. On n'échoue pas le job pour ça.
+        continue-on-error: true
         run: |
+          set -euxo pipefail
           python -m src.download.fetch_missing_observations \
             --missing data/metadonnees/missing_observations.json \
             --stations data/metadonnees/stations.json \
             --logdir logs/observations \
+          | tee logs/observations/retry-missing.csv \
           | python -m src.upload.stdin_to_dynamodb \
               --table Observations --pk id --sk date
+
+      # Versionner les manquants
+      - name: Commit missing_observations.json if changed
+        if: ${{ github.ref == 'refs/heads/main' }}
+        run: |
+          set -eux
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -N data/metadonnees/missing_observations.json
+          git diff --quiet -- data/metadonnees/missing_observations.json && exit 0
+          git add data/metadonnees/missing_observations.json
+          git commit -m "chore(obs): update missing_observations.json [skip ci]"
+          git push
