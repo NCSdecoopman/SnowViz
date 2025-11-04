@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Lit un CSV depuis STDIN et écrit en batch dans DynamoDB.
-# Ajout: option --ttl-days pour écrire expires_at (TTL) depuis la date.
+# Ajout: --ttl-days pour expires_at. Ajout: --allow-empty pour accepter vide.
 
 import sys, csv, json, argparse
 from decimal import Decimal, InvalidOperation
@@ -26,19 +26,15 @@ def _parse_scales(v: str):
     except Exception:
         return []
 
-# -- util TTL
 def _parse_date_utc(date_str: str) -> datetime | None:
-    # Supporte "YYYY-MM-DD" ou ISO "YYYY-MM-DDTHH:MM:SSZ"
     ds = date_str.strip()
     if not ds:
         return None
     try:
-        d0 = datetime.strptime(ds, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        return d0
+        return datetime.strptime(ds, "%Y-%m-%d").replace(tzinfo=timezone.utc)
     except ValueError:
         pass
     try:
-        # ISO 8601 avec Z
         if ds.endswith("Z"):
             ds = ds.replace("Z", "+00:00")
         return datetime.fromisoformat(ds).astimezone(timezone.utc)
@@ -49,35 +45,57 @@ def _compute_expires_at(date_str: str, days: int) -> int | None:
     d0 = _parse_date_utc(date_str)
     if d0 is None:
         return None
-    # fin de journée + N jours
     d_exp = d0 + timedelta(days=days, hours=23, minutes=59, seconds=59)
-    return int(d_exp.timestamp())  # epoch seconds (Number)
+    return int(d_exp.timestamp())
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--table", required=True)
-    ap.add_argument("--pk", required=True)          # ex: id
-    ap.add_argument("--sk")                         # ex: date
-    # --- TTL options (facultatives) ---
+    ap.add_argument("--pk", required=True)           # ex: id
+    ap.add_argument("--sk")                          # ex: date
     ap.add_argument("--ttl-days", type=int, default=0,
                     help="si >0, calcule expires_at= date + N jours")
     ap.add_argument("--ttl-field", default="expires_at",
                     help="nom d'attribut TTL (def=expires_at)")
+    ap.add_argument("--allow-empty", action="store_true",
+                    help="ne pas échouer si l'entrée est vide ou sans données")
     args = ap.parse_args()
 
+    # Refuse absence de stdin sauf si --allow-empty
     if sys.stdin.isatty():
+        if args.allow_empty:
+            print("NOOP: no stdin", file=sys.stderr)
+            return 0
         print("ERROR: no stdin", file=sys.stderr)
         return 2
 
     buf = sys.stdin.read()
+
+    # Vide total
     if not buf.strip():
+        if args.allow_empty:
+            print("NOOP: empty input", file=sys.stderr)
+            return 0
         print("ERROR: 0 input lines", file=sys.stderr)
         return 3
 
     data_lines = buf.splitlines()
     reader = csv.DictReader(data_lines)
     header = reader.fieldnames or []
-    if not header or args.pk not in header or (args.sk and args.sk not in header):
+
+    # Pas d'en-tête
+    if not header:
+        if args.allow_empty:
+            print("NOOP: no header", file=sys.stderr)
+            return 0
+        print("ERROR: missing header", file=sys.stderr)
+        return 4
+
+    # Clés manquantes
+    if args.pk not in header or (args.sk and args.sk not in header):
+        if args.allow_empty:
+            print(f"NOOP: header missing keys {args.pk}/{args.sk}", file=sys.stderr)
+            return 0
         print(f"ERROR: missing header or keys. header={header}", file=sys.stderr)
         return 4
 
@@ -88,7 +106,7 @@ def main():
     wrote = 0
     skipped = 0
 
-    # Idempotent upsert
+    # Écrire. Si aucune ligne de données, NOOP si autorisé.
     with table.batch_writer(overwrite_by_pkeys=pkeys) as bw:
         for row in reader:
             item = {}
@@ -110,7 +128,6 @@ def main():
                 if args.sk and k == args.sk:
                     item[k] = v.strip()          # SK en String
                     continue
-                # Si le CSV fournit déjà expires_at, on le prend tel quel
                 if k == args.ttl_field:
                     try:
                         item[k] = int(str(v).strip())
@@ -126,16 +143,19 @@ def main():
                 skipped += 1
                 continue
 
-            # Injecte expires_at si demandé et absent
             if args.ttl_days > 0 and args.ttl_field not in item:
                 date_col = item.get(args.sk) if args.sk else item.get("date")
                 if isinstance(date_col, str):
                     exp = _compute_expires_at(date_col, args.ttl_days)
                     if exp is not None:
-                        item[args.ttl_field] = exp  # int → Number DynamoDB
+                        item[args.ttl_field] = exp  # int → Number
 
             bw.put_item(Item=item)
             wrote += 1
+
+    if wrote == 0 and skipped == 0 and args.allow_empty:
+        print("NOOP: header only", file=sys.stderr)
+        return 0
 
     print(f"WROTE={wrote} SKIPPED={skipped}")
     return 0

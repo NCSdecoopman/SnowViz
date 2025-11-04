@@ -75,7 +75,7 @@ jobs:
           ) | tee "logs/observations_missing/jx-${{ steps.date.outputs.YMD }}.csv" \
             | tee /dev/stderr \
             | python -u -m src.upload.stdin_to_dynamodb \
-                --table Observations --pk id --sk date
+                --table Observations --pk id --sk date --allow-empty
 
       - name: Fetch J-X to DynamoDB (pipe with TTL=11 days)
         shell: bash
