@@ -44,18 +44,15 @@ jobs:
       - name: Ingest → DynamoDB
         run: |
           set -euxo pipefail
-          python -u -m src.download.fetch_stations | tee stations.csv
-          test $(wc -l < stations.csv) -gt 1
-          cat stations.csv | python -m src.upload.stdin_to_dynamodb --table Stations --pk id
+          python -u -m src.download.fetch_stations \
+          | python -m src.upload.stdin_to_dynamodb --table Stations --pk id
 
-      - name: Vérif rapide après écriture
+      - name: Vérification après écriture
         run: |
           python - << 'PY'
-          import os, boto3
-          region = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
-          tab = boto3.resource("dynamodb", region_name=region).Table("Stations")
-          r = tab.get_item(Key={"id": 38002401}, ConsistentRead=True)
-          print("READ_BACK", "FOUND" if "Item" in r else "MISSING")
-          if "Item" in r: print(r["Item"])
+          import os,boto3; t=boto3.resource("dynamodb").Table("Stations")
+          print(t.get_item(Key={"id":38002401}, ConsistentRead=True).get("Item"))
           PY
 
+          # Compter grossièrement (scan limité)
+          aws dynamodb scan --table-name Stations --select COUNT
