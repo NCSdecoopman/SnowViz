@@ -41,12 +41,28 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Ingest → DynamoDB
-        run: |
-          set -euxo pipefail
-          python -u -m src.download.fetch_stations | tee stations.csv
-          test $(wc -l < stations.csv) -gt 1
-          cat stations.csv | python -m src.upload.stdin_to_dynamodb --table Stations --pk id
+            python - << 'PY'
+            import os, boto3, json
+            region = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
+            sts = boto3.client("sts", region_name=region)
+            who = sts.get_caller_identity()
+            print("WHOAMI", json.dumps(who, indent=2))
+
+            ddb = boto3.client("dynamodb", region_name=region)
+            t = ddb.describe_table(TableName="Stations")  # ajuste si nom différent
+            print("TABLE_REGION", region)
+            print("TABLE_ARN", t["Table"]["TableArn"])
+            print("KEY_SCHEMA", t["Table"]["KeySchema"])
+            print("ATTR_DEF", t["Table"]["AttributeDefinitions"])
+            PY
+
+
+      # - name: Ingest → DynamoDB
+      #   run: |
+      #     set -euxo pipefail
+      #     python -u -m src.download.fetch_stations | tee stations.csv
+      #     test $(wc -l < stations.csv) -gt 1
+      #     cat stations.csv | python -m src.upload.stdin_to_dynamodb --table Stations --pk id
 
 
 
