@@ -2,12 +2,12 @@ name: Observations Daily
 
 on:
   schedule:
-    - cron: '0 5 * * *'  # ~07:00 Europe/Paris en été (UTC+2)
-    - cron: '0 6 * * *'  # ~07:00 Europe/Paris en hiver (UTC+1)
+    - cron: '0 5 * * *'  # ~07:00 Europe/Paris summer (UTC+2)
+    - cron: '0 6 * * *'  # ~07:00 Europe/Paris winter (UTC+1)
   workflow_dispatch:
     inputs:
       days_back:
-        description: "J-X (1 par défaut) pour lancer manuellement J-10, J-6, etc."
+        description: "J-X (1 by default). Use to launch manually at J-10, J-6, etc."
         required: false
         default: "1"
 
@@ -27,6 +27,7 @@ jobs:
       MF_BASIC_AUTH_B64: ${{ secrets.MF_BASIC_AUTH_B64 }}
       METEO_TOKEN_CACHE: ${{ github.workspace }}/.cache/mf_token.json
       METEO_MAX_RPM: '50'
+      PYTHONUNBUFFERED: '1'
     steps:
       - uses: actions/checkout@v4
 
@@ -55,91 +56,29 @@ jobs:
         run: |
           DBACK="${{ github.event.inputs.days_back }}"
           [ -z "$DBACK" ] && DBACK="1"
-          echo "YMD=$(date -u -d "$DBACK days ago" +%F)" >> $GITHUB_OUTPUT
+          echo "YMD=$(date -u -d "$DBACK days ago" +%F)" >> "$GITHUB_OUTPUT"
 
       - name: Cleanup missing registry (keep 11 days)
-        run: |
-          python -m src.maintenance.cleanup_missing_observations --days 11
-
-name: Observations Daily
-
-on:
-  schedule:
-    - cron: '0 5 * * *'  # ~07:00 Europe/Paris en été (UTC+2)
-    - cron: '0 6 * * *'  # ~07:00 Europe/Paris en hiver (UTC+1)
-  workflow_dispatch:
-    inputs:
-      days_back:
-        description: "J-X (1 par défaut) pour lancer manuellement J-10, J-6, etc."
-        required: false
-        default: "1"
-
-concurrency:
-  group: observations-daily
-  cancel-in-progress: false
-
-permissions:
-  id-token: write
-  contents: write
-
-jobs:
-  fetch-observations:
-    runs-on: ubuntu-latest
-    env:
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-      MF_BASIC_AUTH_B64: ${{ secrets.MF_BASIC_AUTH_B64 }}
-      METEO_TOKEN_CACHE: ${{ github.workspace }}/.cache/mf_token.json
-      METEO_MAX_RPM: '50'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Gate by local time Europe/Paris
-        if: ${{ github.event_name == 'schedule' }}
-        run: .github/scripts/should_run.sh daily-07:00
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install uv and deps
-        run: |
-          pip install uv
-          uv pip install requests python-dateutil boto3 --system
-
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Compute target date
-        id: date
-        shell: bash
-        run: |
-          DBACK="${{ github.event.inputs.days_back }}"
-          [ -z "$DBACK" ] && DBACK="1"
-          echo "YMD=$(date -u -d "$DBACK days ago" +%F)" >> $GITHUB_OUTPUT
-
-      - name: Cleanup missing registry (keep 11 days)
-        run: |
-          python -m src.maintenance.cleanup_missing_observations --days 11
+        run: python -m src.maintenance.cleanup_missing_observations --days 11
 
       - name: Fetch missing observations to DynamoDB (pipe)
         shell: bash
         run: |
           set -euxo pipefail
           mkdir -p logs/observations_missing
-          python -m src.download.fetch_missing_observations \
-            --missing data/metadonnees/missing_observations.json \
-            --stations data/metadonnees/stations.json \
-            --logdir logs/observations_missing \
-            --soft-exit
-          | tee logs/observations_missing/jx-${{ steps.date.outputs.YMD }}.csv \
-          | tee /dev/stderr \
-          | python -u -m src.upload.stdin_to_dynamodb \
-              --table Observations --pk id --sk date
+          (
+            python -m src.download.fetch_missing_observations \
+              --missing data/metadonnees/missing_observations.json \
+              --stations data/metadonnees/stations.json \
+              --logdir logs/observations_missing \
+              --soft-exit
+          ) | tee "logs/observations_missing/jx-${{ steps.date.outputs.YMD }}.csv" \
+            | tee /dev/stderr \
+            | python -u -m src.upload.stdin_to_dynamodb \
+                --table Observations --pk id --sk date
 
-      - name: Fetch J-X upload to DynamoDB (pipe with delete after 11 days in AWS)
+      - name: Fetch J-X to DynamoDB (pipe with TTL=11 days)
+        shell: bash
         run: |
           set -euxo pipefail
           mkdir -p logs/observations
@@ -147,7 +86,7 @@ jobs:
             --date "${{ steps.date.outputs.YMD }}" \
             --stations data/metadonnees/stations.json \
             --logdir logs/observations \
-          | tee logs/observations/jx-${{ steps.date.outputs.YMD }}.csv \
+          | tee "logs/observations/jx-${{ steps.date.outputs.YMD }}.csv" \
           | tee /dev/stderr \
           | python -u -m src.upload.stdin_to_dynamodb \
               --table Observations --pk id --sk date --ttl-days 11
@@ -168,55 +107,10 @@ jobs:
         if: ${{ github.ref == 'refs/heads/main' }}
         run: |
           set -eux
-          # identité bot
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # ne commit que s'il y a un diff
           git add -N data/metadonnees/missing_observations.json
           git diff --quiet -- data/metadonnees/missing_observations.json && exit 0
-
-          git add data/metadonnees/missing_observations.json
-          git commit -m "chore(stations): refresh missing_observations.json [skip ci]"
-          git push
-
-      - name: Fetch J-X upload to DynamoDB (pipe with delete after 11 days in AWS)
-        run: |
-          set -euxo pipefail
-          mkdir -p logs/observations
-          python -m src.download.fetch_observations \
-            --date "${{ steps.date.outputs.YMD }}" \
-            --stations data/metadonnees/stations.json \
-            --logdir logs/observations \
-          | tee logs/observations/jx-${{ steps.date.outputs.YMD }}.csv \
-          | tee /dev/stderr \
-          | python -u -m src.upload.stdin_to_dynamodb \
-              --table Observations --pk id --sk date --ttl-days 11
-
-      - name: Upload logs + CSV as artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: observations-${{ github.run_id }}
-          path: |
-            logs/observations/*.log
-            logs/observations/*.csv
-            logs/observations_missing/*.log
-            logs/observations_missing/*.csv
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: Commit missing_observations.json if changed
-        if: ${{ github.ref == 'refs/heads/main' }}
-        run: |
-          set -eux
-          # identité bot
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # ne commit que s'il y a un diff
-          git add -N data/metadonnees/missing_observations.json
-          git diff --quiet -- data/metadonnees/missing_observations.json && exit 0
-
           git add data/metadonnees/missing_observations.json
           git commit -m "chore(stations): refresh missing_observations.json [skip ci]"
           git push
