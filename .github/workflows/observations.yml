@@ -84,18 +84,28 @@ jobs:
         run: |
           python -m src.maintenance.cleanup_missing_observations --days 11
 
-      - name: Retry missing → DynamoDB (pipe) + tee CSV
-        # fetch_missing renvoie RC=1 s'il reste des manquants. On n'échoue pas le job pour ça.
-        continue-on-error: true
+      - name: Fetch J-X → DynamoDB (pipe) + live output
+        shell: bash
         run: |
           set -euxo pipefail
-          python -m src.download.fetch_missing_observations \
-            --missing data/metadonnees/missing_observations.json \
+          mkdir -p logs/observations
+
+          # Stream live les logs du script vers la console
+          ( tail -n +1 -F --retry logs/observations/*.log 2>/dev/null || true ) &
+          TAIL_PID=$!
+          trap 'kill $TAIL_PID || true' EXIT
+
+          # Force unbuffered + line-buffered
+          export PYTHONUNBUFFERED=1
+          stdbuf -oL -eL python -u -m src.download.fetch_observations \
+            --date "${{ steps.date.outputs.YMD }}" \
             --stations data/metadonnees/stations.json \
             --logdir logs/observations \
-          | tee logs/observations/retry-missing.csv \
-          | python -m src.upload.stdin_to_dynamodb \
+          | tee logs/observations/jx-${{ steps.date.outputs.YMD }}.csv \
+          | stdbuf -oL -eL tee /dev/stderr \
+          | stdbuf -oL -eL python -u -m src.upload.stdin_to_dynamodb \
               --table Observations --pk id --sk date
+
 
       # Versionner les manquants
       - name: Commit missing_observations.json if changed
