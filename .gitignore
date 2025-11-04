@@ -6,9 +6,10 @@
 .env
 .env.local
 
-# data MF locale
+# data
 data/
 
-# caches python
+# python
 __pycache__/
 *.pyc
+.log
