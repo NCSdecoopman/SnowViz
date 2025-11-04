@@ -1,0 +1,6 @@
+[run] start min_alt=1000.0 scales=['quotidienne'] departments=[38, 73, 74]
+[count] scale=quotidienne dept=38 items=255
+[count] scale=quotidienne dept=73 items=261
+[count] scale=quotidienne dept=74 items=185
+[merge] unique_ids=701 errors=0
+[emit] csv_rows=358

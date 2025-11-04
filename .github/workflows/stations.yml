@@ -51,10 +51,9 @@ jobs:
           python -u -m src.download.fetch_stations \
             --scales "quotidienne" \
             --departments "38,73,74" \
-            --emit ndjson \
-          | stdbuf -oL -eL jq -c -e 'if (type=="object" and has("id")) then . else error("invalid NDJSON line") end' \
-          | awk '{print; n++} END{printf "LINES=%d\n", n > "/dev/stderr"; if(n==0){exit 1}}' \
-          | tee >(awk 'NR<=5{print > "/dev/stderr"}') \
-          | python -u -m src.upload.stdin_to_dynamodb --table Stations --pk id
+          | tee >(head -n 6 >&2) \
+          | awk 'NR>1{print; n++} END{printf "CSV_LINES=%d\n", n > "/dev/stderr"; if(n==0) exit 1}' \
+          | python -u -m src.upload.stdin_to_dynamodb --table Stations --pk id --format csv
+
 
 
