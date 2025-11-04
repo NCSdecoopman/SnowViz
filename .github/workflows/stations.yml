@@ -30,8 +30,9 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install deps with uv
+      - name: Install uv and deps
         run: |
+          pip install uv
           uv pip install requests python-dateutil boto3 --system
 
       - name: Configure AWS credentials (OIDC)
