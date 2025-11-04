@@ -41,7 +41,13 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Fetch stations → DynamoDB (pipe)
+      - name: Ingest stations → DynamoDB
         run: |
-          python -m src.download.fetch_stations
-          python -m src.upload.stdin_to_dynamodb --table Stations --pk id
+          set -euo pipefail
+          # 1) Génère le CSV sur stdout
+          # 2) tee pour loguer une copie locale
+          # 3) pipe vers l’uploader qui lit sur stdin
+          python -m src.download.fetch_stations \
+          | tee stations.csv \
+          | python -m src.upload.stdin_to_dynamodb --table Stations --pk id
+
