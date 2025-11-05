@@ -73,7 +73,7 @@ jobs:
             | python -u -m src.upload.stdin_to_dynamodb \
                 --table Observations --pk id --sk date --allow-empty
 
-      - name: Fetch J-X to DynamoDB (pipe with TTL=11 days)
+      - name: Fetch J-1 to DynamoDB (pipe with TTL=11 days)
         shell: bash
         run: |
           set -euxo pipefail
