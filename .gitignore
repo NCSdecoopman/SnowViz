@@ -8,13 +8,13 @@
 
 # ignorer data par défaut
 data/**
-# garder le dossier metadonnees
-!data/metadonnees/
-# ignorer tout dans metadonnees...
-data/metadonnees/**
-# ...sauf stations.json
-!data/metadonnees/stations.json
-!data/metadonnees/missing_observations.json
+# # garder le dossier metadonnees
+# !data/metadonnees/
+# # ignorer tout dans metadonnees...
+# data/metadonnees/**
+# # ...sauf stations.json
+# !data/metadonnees/stations.json
+# !data/metadonnees/missing_observations.json
 
 # python
 __pycache__/
