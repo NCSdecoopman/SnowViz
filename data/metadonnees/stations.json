@@ -1,15 +1,5 @@
 [
   {
-    "id": "38002401",
-    "nom": "Prapoutel -S-",
-    "lon": 6.039833,
-    "lat": 45.253333,
-    "alt": 1900,
-    "_scales": [
-      "quotidienne"
-    ]
-  },
-  {
     "id": "38002408",
     "nom": "Prapoutel",
     "lon": 6.016333,
