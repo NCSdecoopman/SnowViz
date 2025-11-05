@@ -62,21 +62,22 @@ jobs:
       - name: Cleanup missing registry (keep 11 days)
         run: python -m src.maintenance.cleanup_missing_observations --days 11
 
-      # - name: Fetch missing observations to DynamoDB (pipe)
-      #   shell: bash
-      #   run: |
-      #     set -euxo pipefail
-      #     mkdir -p logs/observations_missing
-      #     (
-      #       python -m src.download.fetch_missing_observations \
-      #         --missing data/metadonnees/missing_observations.json \
-      #         --stations data/metadonnees/stations.json \
-      #         --logdir logs/observations_missing \
-      #         --soft-exit
-      #     ) | tee "logs/observations_missing/jx-${{ steps.date.outputs.YMD }}.csv" \
-      #       | tee /dev/stderr \
-      #       | python -u -m src.upload.stdin_to_dynamodb \
-      #           --table Observations --pk id --sk date --allow-empty
+      - name: Fetch missing observations to DynamoDB (pipe)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p logs/observations_missing
+          (
+            python -m src.download.fetch_missing_observations \
+              --missing data/metadonnees/missing_observations.json \
+              --stations data/metadonnees/stations.json \
+              --max-dates-per-id 1 \
+              --logdir logs/observations_missing \
+              --soft-exit
+          ) | tee "logs/observations_missing/jx-${{ steps.date.outputs.YMD }}.csv" \
+            | tee /dev/stderr \
+            | python -u -m src.upload.stdin_to_dynamodb \
+                --table Observations --pk id --sk date --allow-empty
 
       - name: Fetch J-X to DynamoDB (pipe with TTL=11 days)
         shell: bash
