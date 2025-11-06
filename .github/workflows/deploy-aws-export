@@ -1,0 +1,68 @@
+name: Deploy export to AWS
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - "export/**"
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-export
+  cancel-in-progress: false
+
+jobs:
+  plan-apply:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: export
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.5
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Terraform init
+        run: terraform init
+
+      # Optionnel: fmt + validate
+      - name: Terraform fmt
+        run: terraform fmt -check
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform plan
+        run: |
+          terraform plan \
+            -var="aws_region=eu-west-3" \
+            -var="table_name=Observations" \
+            -var="repo_owner=NCSdecoopman" \
+            -var="repo_name=SnowViz" \
+            -var="branch=main" \
+            -var="secret_name=SnowViz-AutoUpdate-AWS"
+
+      - name: Terraform apply (main only)
+        if: github.ref == 'refs/heads/main' && github.repository == 'NCSdecoopman/SnowViz'
+        run: |
+          terraform apply -auto-approve \
+            -var="aws_region=eu-west-3" \
+            -var="table_name=Observations" \
+            -var="repo_owner=NCSdecoopman" \
+            -var="repo_name=SnowViz" \
+            -var="branch=main" \
+            -var="secret_name=SnowViz-AutoUpdate-AWS"
