@@ -5,9 +5,7 @@ on:
     branches: [ main ]
     paths:
       - "export/**"
-      - ".github/workflows/deploy-export.yml"
-    paths-ignore:
-      - "export/lambda.zip"
+      - ".github/workflows/deploy-aws-export.yml"
   workflow_dispatch: {}
 
 permissions:
@@ -29,18 +27,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Cache Terraform plugins and .terraform
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.terraform.d/plugin-cache
-            export/.terraform
-          key: ${{ runner.os }}-tf-${{ hashFiles('export/.terraform.lock.hcl') }}
-          restore-keys: |
-            ${{ runner.os }}-tf-
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -54,14 +40,6 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Package Lambda
-        run: |
-          rm -f lambda.zip
-          # code pur
-          zip -r9 lambda.zip lambda_function.py >/dev/null
-          # dépendances optionnelles vendored (ex: ./python/)
-          if [ -d "python" ]; then (cd python && zip -r9 ../lambda.zip . >/dev/null); fi
-
       - name: Terraform init
         run: terraform init -input=false
 
@@ -74,6 +52,7 @@ jobs:
       - name: Terraform plan
         run: |
           terraform plan -input=false -out=tfplan \
+            -lock-timeout=5m \
             -var="aws_region=${{ secrets.AWS_REGION }}" \
             -var="table_name=Observations" \
             -var="repo_owner=NCSdecoopman" \
