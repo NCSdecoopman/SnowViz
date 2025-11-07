@@ -119,7 +119,7 @@ jobs:
           retention-days: 10
 
   invoke-export:
-    needs: fetch-stations
+    needs: fetch-observations
     uses: NCSdecoopman/SnowViz/.github/workflows/invoke-ddb-export.yml@main
     with:
       function_name: ddb-export-observations-to-github
