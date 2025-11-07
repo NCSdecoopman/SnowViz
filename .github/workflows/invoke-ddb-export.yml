@@ -1,0 +1,55 @@
+name: Invoke DDB → GitHub export
+
+on:
+  workflow_dispatch:
+    inputs:
+      function_name:
+        description: "lambda_function""
+        required: false
+        default: ddb-export-observations-to-github
+      region:
+        description: "AWS region (fallback sur secret)"
+        required: false
+
+  workflow_call:
+    inputs:
+      function_name:
+        required: false
+        type: string
+        default: ddb-export-observations-to-github
+    secrets:
+      AWS_ROLE_ARN:
+        required: true
+      AWS_REGION:
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: invoke-ddb-export
+  cancel-in-progress: false
+
+jobs:
+  invoke:
+    runs-on: ubuntu-latest
+    env:
+      # si "region" non fourni en dispatch, on prend le secret
+      AWS_REGION: ${{ inputs.region || secrets.AWS_REGION }}
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Invoke Lambda
+        run: |
+          aws lambda invoke \
+            --function-name "${{ inputs.function_name }}" \
+            --payload '{}' out.json >/dev/null
+          cat out.json
+
+      - name: Tail last minute logs
+        run: aws logs tail "/aws/lambda/${{ inputs.function_name }}" --since 1m || true
