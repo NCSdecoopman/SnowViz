@@ -126,7 +126,7 @@ resource "aws_lambda_function" "exporter" {
   filename      = data.archive_file.lambda_zip.output_path
   timeout       = 900
   memory_size   = 512
-  kms_key_arn = data.aws_kms_alias.aws_lambda.target_key_arn
+  kms_key_arn   = data.aws_kms_alias.aws_lambda.target_key_arn
 
   environment {
     variables = {
