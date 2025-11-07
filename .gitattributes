@@ -1,1 +1,3 @@
-"*.tf     text eol=lf`n*.tfvars text eol=lf"
+data/** merge=keepTheirs
+*.tf     text eol=lf
+*.tfvars text eol=lf
