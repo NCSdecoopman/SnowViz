@@ -40,17 +40,17 @@ jobs:
         with:
           terraform_version: 1.9.7
 
-      - name: Importer les ressources existantes
-        run: |
-          terraform import aws_iam_role.lambda_role ddb-export-snowviz-role || true
-          terraform import aws_iam_policy.lambda_policy arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:policy/ddb-export-snowviz-policy || true
-          terraform import aws_lambda_function.exporter ddb-export-observations-to-github || true
-
       - name: Terraform fmt (check)
         run: terraform fmt -check -recursive
 
       - name: Terraform init
         run: terraform init -input=false
+
+      - name: Importer les ressources existantes
+        run: |
+          terraform import aws_iam_role.lambda_role ddb-export-snowviz-role || true
+          terraform import aws_iam_policy.lambda_policy arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:policy/ddb-export-snowviz-policy || true
+          terraform import aws_lambda_function.exporter ddb-export-observations-to-github || true
 
       - name: Terraform plan
         run: terraform plan -input=false -out=tfplan
