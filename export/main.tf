@@ -111,7 +111,7 @@ resource "aws_lambda_function" "exporter" {
 # => 08:00 à Paris en hiver (UTC+1), 09:00 en été (UTC+2)
 resource "aws_cloudwatch_event_rule" "daily" {
   name                = "ddb-export-observations-daily"
-  schedule_expression = "cron(30 9 * * ? *)"
+  schedule_expression = "cron(30 8 * * ? *)"
 }
 
 resource "aws_cloudwatch_event_target" "tgt" {
