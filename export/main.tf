@@ -62,7 +62,7 @@ resource "aws_cloudwatch_log_group" "lg" {
   name              = "/aws/lambda/ddb-export-observations-to-github"
   retention_in_days = 7
   # crée le log group avant toute exécution de la Lambda
-  depends_on = [aws_lambda_function.exporter]
+  depends_on   = [aws_lambda_function.exporter]
   skip_destroy = true
 }
 
@@ -163,7 +163,7 @@ resource "aws_cloudwatch_event_target" "tgt" {
 }
 
 resource "aws_lambda_permission" "allow_events_daily" {
-  statement_id  = "AllowFromEvents-ddb-export-observations-daily-${md5(timestamp())}"  # Génère un ID unique
+  statement_id  = "AllowFromEvents-ddb-export-observations-daily-${md5(timestamp())}" # Génère un ID unique
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.exporter.arn
   principal     = "events.amazonaws.com"
