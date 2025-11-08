@@ -1,0 +1,142 @@
+---
+interface Props { obsUrl: string; staUrl: string; }
+const { obsUrl, staUrl } = Astro.props as Props;
+---
+
+<div id="table-root" data-obs={obsUrl} data-sta={staUrl}></div>
+
+<script type="module">
+  // ISO UTC -> +1 jour (relevé à 6h du J+1 de l'enregistrement) -> "JJ/MM/AA"
+  const fmtDatePlus1 = (iso) => {
+    const d = new Date(iso);
+    d.setUTCDate(d.getUTCDate() + 1);
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const yy = String(d.getUTCFullYear()).slice(-2);
+    return `${dd}/${mm}/${yy}`;
+  };
+
+  const root = document.getElementById('table-root');
+  const obsUrl = root.dataset.obs;
+  const staUrl = root.dataset.sta;
+
+  let stations = [], observations = [], rows = [];
+  let currentDate = null;
+  let sort = { key: 'NEIGETOT06', dir: 'desc' };
+
+  const wrap = document.createElement('div');
+
+  const controls = document.createElement('div');
+  controls.className = 'controls';
+  controls.innerHTML = `
+    <label>Date : <select id="date-select"></select></label>
+  `;
+
+  const tableWrap = document.createElement('div');
+  tableWrap.className = 'table-wrap';
+  tableWrap.innerHTML = `
+    <table id="obs-table">
+      <thead>
+        <tr>
+          <th data-key="nom">Station ▲▼</th>
+          <th data-key="alt">Altitude</th>
+          <th data-key="NEIGETOT06">Hauteur à 6h ▲▼</th>
+          <th data-key="HNEIGEF">Hauteur de neige fraîche ▲▼</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  `;
+
+  wrap.appendChild(controls);
+  wrap.appendChild(tableWrap);
+  root.appendChild(wrap);
+
+  const tbody = tableWrap.querySelector('tbody');
+  const dateSel = controls.querySelector('#date-select');
+
+  const numOrNull = v => (v === undefined || v === '' ? null : Number(v));
+  const fmt = n => (n === null || Number.isNaN(n) ? '—' : String(n));
+
+  const joinForDate = (d) => {
+    const map = new Map(stations.map(s => [String(s.id), s]));
+    return observations
+      .filter(o => o.date === d)
+      .map(o => {
+        const s = map.get(String(o.id));
+        if (!s) return null;
+        return {
+          id: String(o.id),
+          nom: s.nom,
+          lat: s.lat, lon: s.lon, alt: s.alt,
+          date: o.date,
+          NEIGETOT06: numOrNull(o.NEIGETOT06),
+          HNEIGEF: numOrNull(o.HNEIGEF)
+        };
+      })
+      .filter(Boolean);
+  };
+
+  const renderTable = () => {
+    const copy = [...rows].sort((a, b) => {
+      const va = a[sort.key], vb = b[sort.key];
+      if (va === vb) return 0;
+      if (va === null) return 1;
+      if (vb === null) return -1;
+      return (va < vb ? -1 : 1) * (sort.dir === 'asc' ? 1 : -1);
+    });
+    tbody.innerHTML = '';
+    for (const r of copy) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${r.nom}</td>
+        <td>${fmt(r.alt)}</td>
+        <td>${fmt(r.NEIGETOT06)}</td>
+        <td>${fmt(r.HNEIGEF)}</td>
+      `;
+      tbody.appendChild(tr);
+    }
+  };
+
+  const bindSort = () => {
+    tableWrap.querySelectorAll('th').forEach(th => {
+      const key = th.getAttribute('data-key'); if (!key) return;
+      th.addEventListener('click', () => {
+        if (sort.key === key) sort.dir = sort.dir === 'asc' ? 'desc' : 'asc';
+        else { sort.key = key; sort.dir = key === 'nom' ? 'asc' : 'desc'; }
+        renderTable();
+      });
+    });
+  };
+
+  const load = async () => {
+    const [o, s] = await Promise.all([
+      fetch(obsUrl).then(r => r.json()),
+      fetch(staUrl).then(r => r.json())
+    ]);
+    observations = Array.isArray(o) ? o : [];
+    stations = Array.isArray(s) ? s : [];
+
+    const dates = Array.from(new Set(observations.map(x => x.date))).sort();
+    dateSel.innerHTML = dates
+      .map(d => `<option value="${d}">${fmtDatePlus1(d)}</option>`)
+      .join('');
+    currentDate = dates[dates.length - 1];
+    dateSel.value = currentDate;
+
+    rows = joinForDate(currentDate);
+    bindSort();
+    renderTable();
+
+    dateSel.addEventListener('change', () => {
+      currentDate = dateSel.value;
+      rows = joinForDate(currentDate);
+      renderTable();
+    });
+  };
+
+  load().catch(e => {
+    console.error(e);
+    root.innerHTML = '<p>Erreur de chargement des données</p>';
+  });
+</script>

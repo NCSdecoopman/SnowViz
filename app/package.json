@@ -1,0 +1,27 @@
+{
+  "name": "snowviz-app",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "predev": "node scripts/copy-data.mjs",
+    "dev": "astro dev",
+    "prebuild": "node scripts/copy-data.mjs",
+    "build": "astro build",
+    "preview": "astro preview --host"
+  },
+  "engines": {
+    "node": ">=18.18"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.1.17",
+    "astro": "^5.15.4",
+    "chart.js": "^4.4.6",
+    "leaflet": "^1.9.4",
+    "tailwindcss": "^4.1.17",
+    "tslib": "^2.8.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

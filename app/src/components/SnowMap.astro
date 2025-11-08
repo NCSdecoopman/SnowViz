@@ -1,0 +1,134 @@
+---
+import 'leaflet/dist/leaflet.css';
+interface Props { obsUrl: string; staUrl: string; }
+const { obsUrl, staUrl } = Astro.props as Props;
+---
+
+<div id="map" data-obs={obsUrl} data-sta={staUrl}></div>
+<div id="legend" class="legend"></div>
+
+<!-- Charger Leaflet via CDN pour éviter la résolution Vite -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+
+<script type="module">
+  // ISO UTC -> +1 jour -> "JJ/MM/AA"
+  const fmtDatePlus1 = (iso) => {
+    const d = new Date(iso);
+    d.setUTCDate(d.getUTCDate() + 1);
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const yy = String(d.getUTCFullYear()).slice(-2);
+    return `${dd}/${mm}/${yy}`;
+  };
+
+  const el = document.getElementById('map');
+  const obsUrl = el.dataset.obs;
+  const staUrl = el.dataset.sta;
+
+  const num = v => (v === undefined || v === '' ? null : Number(v));
+  const fmt = n => (n === null || Number.isNaN(n) ? '—' : String(n));
+  const sizeScale = (vals, min=4, max=22) => {
+    const v = vals.filter(x => typeof x === 'number' && isFinite(x));
+    if (!v.length) return () => min;
+    const vmin = Math.min(...v), vmax = Math.max(...v);
+    if (vmax <= 0) return () => min;
+    return x => {
+      const c = Math.max(0, x || 0);
+      const t = (Math.sqrt(c) - Math.sqrt(vmin)) / (Math.sqrt(vmax) - Math.sqrt(vmin) || 1);
+      return Math.round(min + t * (max - min));
+    };
+  };
+
+  (async () => {
+    // attendre que le script Leaflet CDN charge et définisse L
+    await new Promise(res => {
+      if (window.L) return res();
+      window.addEventListener('load', res);
+    });
+
+    const [obs, sta] = await Promise.all([
+      fetch(obsUrl).then(r => r.json()),
+      fetch(staUrl).then(r => r.json()),
+    ]);
+
+    const dates = Array.from(new Set(obs.map(x => x.date))).sort();
+    if (!dates.length) return;
+    const d = dates.at(-1);
+
+    const mSta = new Map(sta.map(s => [String(s.id), s]));
+    const rows = obs.filter(x => x.date === d).map(x => {
+      const s = mSta.get(String(x.id));
+      if (!s) return null;
+      return {
+        id: String(x.id), nom: s.nom, lat: s.lat, lon: s.lon, alt: s.alt,
+        NEIGETOT06: num(x.NEIGETOT06), HNEIGEF: num(x.HNEIGEF),
+        date: x.date
+      };
+    }).filter(Boolean);
+
+    const pts = rows.filter(r => Number.isFinite(r.lat) && Number.isFinite(r.lon));
+    if (!pts.length) return;
+
+    const bounds = L.latLngBounds(pts.map(p => [p.lat, p.lon]));
+    const center = bounds.getCenter();
+
+    const map = L.map(el, { zoomControl: true }).setView(center, 10); // zoom provisoire
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '&copy; OpenStreetMap' }).addTo(map);
+    const layer = L.layerGroup().addTo(map);
+
+    let varKey = 'NEIGETOT06';
+    const ctrl = document.createElement('div');
+    ctrl.className = 'controls';
+    ctrl.innerHTML = `
+      <fieldset class="fieldset"><legend class="sr-only">Variable carte</legend>
+        <label><input type="radio" name="var" value="NEIGETOT06" checked>Hauteur à 6h</label>
+        <label><input type="radio" name="var" value="HNEIGEF">Hauteur neige fraîche</label>
+      </fieldset>
+    `;
+    el.parentElement.insertBefore(ctrl, el);
+    ctrl.querySelectorAll('input[name="var"]').forEach(r =>
+      r.addEventListener('change', e => { varKey = e.target.value; render(); })
+    );
+
+    let fitted = false;
+
+    const render = () => {
+      layer.clearLayers();
+      const vals = rows.map(r => r[varKey] ?? 0);
+      const rad = sizeScale(vals);
+
+      for (const r of rows) {
+        if (!Number.isFinite(r.lat) || !Number.isFinite(r.lon)) continue;
+        const v = r[varKey] ?? 0;
+        const dstr = fmtDatePlus1(r.date);
+        L.circleMarker([r.lat, r.lon], {
+          radius: rad(v), color: '#3aa1ff', weight: 1, fillColor: '#3aa1ff', fillOpacity: 0.35
+        }).bindPopup(
+          `<b>${r.nom}</b> (${fmt(r.alt)} m)
+          <br/>${dstr}
+          <br/>Hauteur à 6h : ${fmt(r.NEIGETOT06)} cm
+          <br/>Neige fraîche : ${fmt(r.HNEIGEF)} cm`
+        ).addTo(layer);
+      }
+
+      if (!fitted && bounds.isValid()) {
+        fitted = true;
+        if (pts.length === 1) map.setView(center, 12);
+        else map.fitBounds(bounds.pad(0.12), { maxZoom: 12 });
+      }
+
+      const leg = document.getElementById('legend');
+      const vs = vals.filter(x => Number.isFinite(x));
+      if (!vs.length) { leg.textContent = `Aucune valeur pour ${varKey}`; return; }
+      const max = Math.max(...vs), mid = Math.round(max / 2);
+      leg.innerHTML = `<span>Échelle (${varKey})</span>` + [0, mid, max].map(val => {
+        const r = rad(val);
+        return `<span><span class="dot" style="width:${r}px;height:${r}px"></span> ${val}</span>`;
+      }).join('');
+    };
+
+
+    render();
+  })().catch(console.error);
+</script>
