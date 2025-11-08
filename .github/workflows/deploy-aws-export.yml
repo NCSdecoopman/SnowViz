@@ -9,8 +9,8 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  id-token: write     # OIDC -> AWS
-  contents: read
+  id-token: write
+  contents: write
 
 concurrency:
   group: deploy-aws-export-${{ github.ref }}
@@ -21,17 +21,17 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: export  # Terraform vit dans export/
+        working-directory: export
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials (OIDC)
+      - name: Setup AWS OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}   # ex: arn:aws:iam::<acct>:role/github-oidc-snowviz
-          aws-region: ${{ secrets.AWS_REGION }}         # ex: eu-west-3
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
           audience: sts.amazonaws.com
 
       - name: Setup Terraform
@@ -39,14 +39,35 @@ jobs:
         with:
           terraform_version: 1.9.7
 
-      - name: Terraform fmt (check)
-        run: terraform fmt -check -recursive
+      - name: Cache Terraform plugins
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.terraform.d/plugin-cache
+            .terraform
+          key: tf-${{ runner.os }}-${{ hashFiles('export/**/*.tf') }}
+          restore-keys: |
+            tf-${{ runner.os }}-
+
+      - name: Terraform fmt (auto-fix)
+        shell: bash
+        run: |
+          terraform fmt -recursive
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "chore(terraform): fmt [skip ci]"
+            git push
+          fi
 
       - name: Terraform init
         run: terraform init -input=false
 
-      - name: Importer les ressources existantes
+      - name: Import existing resources (idempotent)
+        shell: bash
         run: |
+          set -eux
           terraform import aws_iam_role.lambda_role ddb-export-snowviz-role || true
           terraform import aws_iam_policy.lambda_policy arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:policy/ddb-export-snowviz-policy || true
           terraform import aws_lambda_function.exporter ddb-export-observations-to-github || true

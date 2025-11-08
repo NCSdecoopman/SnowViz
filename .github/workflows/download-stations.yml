@@ -2,68 +2,57 @@ name: Download and update weather stations metadata
 
 on:
   schedule:
-    - cron: '0 23 * * 5' # Chaque vendredi à 23h00 UTC (00:00 samedi à Paris en hiver)
+    - cron: '0 23 * * 5' # Vendredi 23:00 UTC
   workflow_dispatch: {}
-
-concurrency:
-  group: stations-metadata-update
-  cancel-in-progress: false
 
 permissions:
   id-token: write
   contents: write
 
+concurrency:
+  group: stations-metadata-update
+  cancel-in-progress: false
+
+env:
+  MF_BASIC_AUTH_B64: ${{ secrets.MF_BASIC_AUTH_B64 }}
+  METEO_TOKEN_CACHE: ${{ github.workspace }}/.cache/mf_token.json
+  METEO_MAX_RPM: '50'
+  ALT_SELECT: '1000'
+
 jobs:
   fetch-stations:
     runs-on: ubuntu-latest
-    env:
-      MF_BASIC_AUTH_B64: ${{ secrets.MF_BASIC_AUTH_B64 }}
-      METEO_TOKEN_CACHE: ${{ github.workspace }}/.cache/mf_token.json
-      METEO_MAX_RPM: '50'
-      ALT_SELECT: '1000'
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python + AWS
+        uses: ./.github/actions/setup-uv-aws
         with:
           python-version: '3.11'
-
-      - name: Install uv and deps
-        run: |
-          pip install uv
-          uv pip install requests python-dateutil boto3 --system
-
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          region: ${{ secrets.AWS_REGION }}
+          extra-packages: 'requests python-dateutil boto3'
 
       - name: Download stations and export to DynamoDB
+        shell: bash
         run: |
           set -euxo pipefail
           python -u -m src.download.fetch_stations
 
       - name: Commit stations.json if changed
         if: ${{ github.ref == 'refs/heads/main' }}
+        shell: bash
         run: |
           set -eux
-          # identité bot
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # marque l’intention d’ajout même si ignoré
           git add -N -f data/metadonnees/stations.json || true
-
-          # quitte si pas de diff
           git diff --quiet -- data/metadonnees/stations.json && exit 0
-
-          # ajoute réellement pour commit CI
           git add -f data/metadonnees/stations.json
           git commit -m "chore(stations): refresh stations.json [skip ci]"
           git push
 
-      - name: Upload logs as artifact
+      - name: Upload logs
         uses: actions/upload-artifact@v4
         with:
           name: stations-logs-${{ github.run_id }}

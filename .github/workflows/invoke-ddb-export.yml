@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       function_name:
-        description: "lambda_function"
+        description: "Lambda function name"
         required: false
         default: ddb-export-observations-to-github
       region:
-        description: "AWS region (fallback sur secret)"
+        description: "AWS region (fallback on secret)"
         required: false
 
   workflow_call:
@@ -27,8 +27,9 @@ permissions:
   id-token: write
   contents: read
 
+# Clé par fonction pour éviter les collisions entre invocations
 concurrency:
-  group: invoke-ddb-export
+  group: invoke-ddb-export-${{ inputs.function_name || 'default' }}
   cancel-in-progress: false
 
 jobs:
@@ -44,6 +45,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Invoke Lambda
+        shell: bash
         run: |
           aws lambda invoke \
             --function-name "${{ inputs.function_name }}" \
@@ -51,4 +53,5 @@ jobs:
           cat out.json
 
       - name: Tail last minute logs
+        shell: bash
         run: aws logs tail "/aws/lambda/${{ inputs.function_name }}" --since 1m || true

@@ -2,47 +2,43 @@ name: Download observations and upload to DynamoDB
 
 on:
   schedule:
-    - cron: '0 6 * * *'  # 6h UTC = 7h Paris (en hiver), 8h Paris (en été)
+    - cron: '0 6 * * *'  # 06:00 UTC
   workflow_dispatch:
     inputs:
       days_back:
-        description: "J-X (0 by default). Use to launch manually at J-10, J-6, etc."
+        description: "J-X (0 par défaut). Ex: 1 pour J-1"
         required: false
-        default: "0"
-
-concurrency:
-  group: download-observations
-  cancel-in-progress: false
+        default: "1"
 
 permissions:
   id-token: write
   contents: write
 
+concurrency:
+  group: download-observations
+  cancel-in-progress: false
+
+env:
+  MF_BASIC_AUTH_B64: ${{ secrets.MF_BASIC_AUTH_B64 }}
+  METEO_TOKEN_CACHE: ${{ github.workspace }}/.cache/mf_token.json
+  METEO_MAX_RPM: '50'
+  PYTHONUNBUFFERED: '1'
+
 jobs:
   fetch-observations:
     runs-on: ubuntu-latest
-    env:
-      MF_BASIC_AUTH_B64: ${{ secrets.MF_BASIC_AUTH_B64 }}
-      METEO_TOKEN_CACHE: ${{ github.workspace }}/.cache/mf_token.json
-      METEO_MAX_RPM: '50'
-      PYTHONUNBUFFERED: '1'
+    outputs:
+      ymd: ${{ steps.date.outputs.YMD }}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python + AWS
+        uses: ./.github/actions/setup-uv-aws
         with:
           python-version: '3.11'
-
-      - name: Install uv and deps
-        run: |
-          pip install uv
-          uv pip install requests python-dateutil boto3 --system
-
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          region: ${{ secrets.AWS_REGION }}
+          extra-packages: 'requests python-dateutil boto3'
 
       - name: Compute target date
         id: date
@@ -53,9 +49,10 @@ jobs:
           echo "YMD=$(date -u -d "$DBACK days ago" +%F)" >> "$GITHUB_OUTPUT"
 
       - name: Cleanup missing registry (keep 11 days)
+        shell: bash
         run: python -m src.maintenance.cleanup_missing_observations --days 11
 
-      - name: Fetch missing observations to DynamoDB (pipe)
+      - name: Fetch missing observations to DDB
         shell: bash
         run: |
           set -euxo pipefail
@@ -72,7 +69,7 @@ jobs:
             | python -u -m src.upload.stdin_to_dynamodb \
                 --table Observations --pk id --sk date --allow-empty
 
-      - name: Fetch J-1 to DynamoDB (pipe with TTL=11 days)
+      - name: Fetch J-X to DDB (TTL 11j)
         shell: bash
         run: |
           set -euxo pipefail
@@ -88,27 +85,21 @@ jobs:
 
       - name: Commit missing_observations.json if changed
         if: ${{ github.ref == 'refs/heads/main' }}
+        shell: bash
         run: |
           set -eux
-          # identité bot
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # marque l’intention d’ajout même si ignoré
           git add -N -f data/metadonnees/missing_observations.json || true
-
-          # quitte si pas de diff
           git diff --quiet -- data/metadonnees/missing_observations.json && exit 0
-
-          # ajoute réellement pour commit CI
           git add -f data/metadonnees/missing_observations.json
-          git commit -m "chore(stations): refresh missing_observations.json [skip ci]"
+          git commit -m "chore(obs): refresh missing_observations.json [skip ci]"
           git push
 
-      - name: Upload logs + CSV as artifacts
+      - name: Upload logs + CSV
         uses: actions/upload-artifact@v4
         with:
-          name: observations-${{ github.run_id }}
+          name: observations-${{ steps.date.outputs.YMD }}-${{ github.run_id }}
           path: |
             logs/observations/*.log
             logs/observations/*.csv
