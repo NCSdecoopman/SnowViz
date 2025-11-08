@@ -21,3 +21,16 @@ lambda.zip
 out.json
 *.tfstate
 *.tfstate.*
+
+# Astro build
+app/dist/
+app/.astro/
+
+# node stuff
+app/node_modules/
+app/.npm/
+app/.cache/
+
+# editor
+.DS_Store
+.vscode/
