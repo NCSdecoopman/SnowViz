@@ -62,3 +62,43 @@ tbody tr:hover { background: rgba(255,255,255,.03); }
   display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
 }
 .legend .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); display: inline-block; }
+
+/* Conteneur global du footer */
+.site-footer {
+  border-top: 1px solid var(--border, #e5e7eb);
+  font-size: 8px;
+}
+/* Ligne citation, compacte et lisible */
+.citation {
+  margin: 0 0 0.5rem 0;
+  line-height: 1.5;
+}
+.citation .label {
+  font-weight: 600;
+  margin-right: 0.25rem;
+}
+.citation cite {
+  font-style: normal; /* on garde l'italique uniquement pour <em> */
+}
+.citation em {
+  font-style: italic;
+}
+/* Ligne méta (licence, lien API, année) */
+.meta {
+  margin: 0;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  color: var(--meta, #475569);
+}
+.meta a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted currentColor;
+}
+.meta a:focus,
+.meta a:hover {
+  text-decoration: underline;
+  outline: none;
+}
