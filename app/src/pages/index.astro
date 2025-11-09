@@ -3,10 +3,7 @@ import '../styles/global.css';
 import DataTable from '../components/DataTable.astro';
 import SnowMap from '../components/SnowMap.astro';
 
-// Base robuste: '/niveo/' en prod, '/' en dev
-const b = import.meta.env.BASE_URL || '/';
-const base = b.endsWith('/') ? b : b + '/';
-
+const base = import.meta.env.BASE_URL; // '/niveo/' en prod, '/' en dev
 const obsUrl = `${base}data/observations.json`;
 const staUrl = `${base}data/metadonnees/stations.json`;
 ---
@@ -14,20 +11,20 @@ const staUrl = `${base}data/metadonnees/stations.json`;
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>niveo — Visualisation neigeuse</title>
+    <title>Nivéo — Visualisation neigeuse</title>
     <meta name="color-scheme" content="dark light" />
   </head>
   <body>
     <header class="container page-header flex items-center gap-3">
-      <h1 class="sr-only">niveo</h1>
-        <img
-          src={`${base}logo/niveo-black.svg`}
-          alt="niveo"
-          width="128"
-          height="44"
-          loading="eager"
-          decoding="async"
-        />
+      <h1 class="sr-only">Nivéo - Application de visualisation de la hauteur de neige</h1>
+      <img
+        src={`${base}logo/niveo-light.svg`}
+        alt="Nivéo"
+        width="128"
+        height="44"
+        loading="eager"
+        decoding="async"
+      />
     </header>
 
     <main class="container grid">

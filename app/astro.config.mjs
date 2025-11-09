@@ -1,10 +1,9 @@
 import { defineConfig } from 'astro/config';
-
 import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
-  site: 'https://NCSdecoopman.github.io',
-  base: '/niveo',
+  site: 'https://ncsdecoopman.github.io',
+  base: '/niveo/',               // <-- slash final
   server: { port: 4321 },
   vite: {
     build: { sourcemap: false },
