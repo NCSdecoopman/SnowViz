@@ -68,8 +68,8 @@ jobs:
         shell: bash
         run: |
           set -eux
-          terraform import aws_iam_role.lambda_role ddb-export-niveo-role || true
-          terraform import aws_iam_policy.lambda_policy arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:policy/ddb-export-niveo-policy || true
+          terraform import aws_iam_role.lambda_role ddb-export-SnowViz-role || true
+          terraform import aws_iam_policy.lambda_policy arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:policy/ddb-export-SnowViz-policy || true
           terraform import aws_lambda_function.exporter ddb-export-observations-to-github || true
           terraform import aws_cloudwatch_log_group.lg /aws/lambda/ddb-export-observations-to-github || true
 
