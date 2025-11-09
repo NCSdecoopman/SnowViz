@@ -1,6 +1,6 @@
-# Workflow de déploiement SnowViz sur GitHub Pages
+# Workflow de déploiement niveo sur GitHub Pages
 
-Ce workflow GitHub Actions déploie automatiquement l’application SnowViz (Astro) sur GitHub Pages.
+Ce workflow GitHub Actions déploie automatiquement l’application niveo (Astro) sur GitHub Pages.
 
 ## Déclencheurs
 

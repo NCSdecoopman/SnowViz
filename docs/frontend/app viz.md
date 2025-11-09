@@ -1,8 +1,8 @@
-# Documentation SnowViz — Application de visualisation
+# Documentation niveo — Application de visualisation
 
 ## Introduction
 
-SnowViz est une application de visualisation de données neige.
+niveo est une application de visualisation de données neige.
 Elle utilise **Astro** pour le front-end et affiche les observations via tableaux et cartes interactives.
 
 ## Structure du projet

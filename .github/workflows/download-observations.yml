@@ -110,7 +110,7 @@ jobs:
 
   invoke-export:
     needs: fetch-observations
-    uses: NCSdecoopman/SnowViz/.github/workflows/invoke-ddb-export.yml@main
+    uses: NCSdecoopman/niveo/.github/workflows/invoke-ddb-export.yml@main
     with:
       function_name: ddb-export-observations-to-github
     secrets:

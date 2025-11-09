@@ -68,8 +68,8 @@ jobs:
         shell: bash
         run: |
           set -eux
-          terraform import aws_iam_role.lambda_role ddb-export-snowviz-role || true
-          terraform import aws_iam_policy.lambda_policy arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:policy/ddb-export-snowviz-policy || true
+          terraform import aws_iam_role.lambda_role ddb-export-niveo-role || true
+          terraform import aws_iam_policy.lambda_policy arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:policy/ddb-export-niveo-policy || true
           terraform import aws_lambda_function.exporter ddb-export-observations-to-github || true
           terraform import aws_cloudwatch_log_group.lg /aws/lambda/ddb-export-observations-to-github || true
 
@@ -77,5 +77,5 @@ jobs:
         run: terraform plan -input=false -out=tfplan
 
       - name: Terraform apply (main only)
-        if: github.ref == 'refs/heads/main' && github.repository == 'NCSdecoopman/SnowViz'
+        if: github.ref == 'refs/heads/main' && github.repository == 'NCSdecoopman/niveo'
         run: terraform apply -input=false -auto-approve tfplan

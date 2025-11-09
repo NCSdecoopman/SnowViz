@@ -1,4 +1,4 @@
-name: Deploy SnowViz app to GitHub Pages
+name: Deploy niveo app to GitHub Pages
 
 on:
   push:

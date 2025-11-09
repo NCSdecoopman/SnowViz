@@ -1,5 +1,5 @@
 [project]
-name = "snowviz"
+name = "niveo"
 version = "0.1.0"
 description = "Application de visualisation de données météorologiques (nivologie)."
 readme = "README.md"

@@ -3,7 +3,7 @@ import '../styles/global.css';
 import DataTable from '../components/DataTable.astro';
 import SnowMap from '../components/SnowMap.astro';
 
-// Base robuste: '/SnowViz/' en prod, '/' en dev
+// Base robuste: '/niveo/' en prod, '/' en dev
 const b = import.meta.env.BASE_URL || '/';
 const base = b.endsWith('/') ? b : b + '/';
 
@@ -14,12 +14,12 @@ const staUrl = `${base}data/metadonnees/stations.json`;
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>SnowViz — Visualisation neigeuse</title>
+    <title>niveo — Visualisation neigeuse</title>
     <meta name="color-scheme" content="dark light" />
   </head>
   <body>
     <header class="container page-header">
-      <h1>SnowViz</h1>
+      <h1>niveo</h1>
     </header>
 
     <main class="container grid">

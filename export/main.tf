@@ -27,7 +27,7 @@ variable "repo_owner" {
 }
 variable "repo_name" {
   type    = string
-  default = "SnowViz"
+  default = "niveo"
 }
 variable "branch" {
   type    = string
@@ -35,7 +35,7 @@ variable "branch" {
 }
 variable "secret_name" {
   type    = string
-  default = "SnowViz-AutoUpdate-AWS"
+  default = "niveo-AutoUpdate-AWS"
 }
 # Active le déclencheur EventBridge quotidien à 07:00 UTC si true -var="enable_schedule=true"
 variable "enable_schedule" {
@@ -70,7 +70,7 @@ resource "aws_cloudwatch_log_group" "lg" {
 # IAM
 ########################
 resource "aws_iam_role" "lambda_role" {
-  name = "ddb-export-snowviz-role"
+  name = "ddb-export-niveo-role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17",
     Statement = [{
@@ -82,7 +82,7 @@ resource "aws_iam_role" "lambda_role" {
 }
 
 resource "aws_iam_policy" "lambda_policy" {
-  name        = "ddb-export-snowviz-policy"
+  name        = "ddb-export-niveo-policy"
   description = "DynamoDB Scan, Secrets read, Logs"
   policy = jsonencode({
     Version = "2012-10-17",
