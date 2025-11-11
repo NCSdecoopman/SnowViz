@@ -35,7 +35,7 @@ variable "branch" {
 }
 variable "param_name" {
   type    = string
-  default = "/snowviz/github/pat"  # ex. SSM path
+  default = "/snowviz/github/pat" # ex. SSM path
 }
 # Active le déclencheur EventBridge quotidien à 07:00 UTC si true -var="enable_schedule=true"
 variable "enable_schedule" {
@@ -88,27 +88,27 @@ resource "aws_iam_policy" "lambda_policy" {
     Version = "2012-10-17",
     Statement = [
       {
-        Sid   = "DdbScan",
-        Effect= "Allow",
-        Action= ["dynamodb:Scan"],
+        Sid      = "DdbScan",
+        Effect   = "Allow",
+        Action   = ["dynamodb:Scan"],
         Resource = "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.me.account_id}:table/${var.table_name}"
       },
       {
-        Sid   = "SsmRead",
-        Effect= "Allow",
-        Action= ["ssm:GetParameter","ssm:GetParameters"],
+        Sid      = "SsmRead",
+        Effect   = "Allow",
+        Action   = ["ssm:GetParameter", "ssm:GetParameters"],
         Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.me.account_id}:parameter${var.param_name}"
       },
       {
-        Sid   = "KmsDecryptForSSM",
-        Effect= "Allow",
-        Action= ["kms:Decrypt"],
+        Sid      = "KmsDecryptForSSM",
+        Effect   = "Allow",
+        Action   = ["kms:Decrypt"],
         Resource = data.aws_kms_alias.aws_ssm.target_key_arn
       },
       {
-        Sid   = "Logs",
-        Effect= "Allow",
-        Action= ["logs:CreateLogGroup","logs:CreateLogStream","logs:PutLogEvents"],
+        Sid      = "Logs",
+        Effect   = "Allow",
+        Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
         Resource = "*"
       }
     ]
@@ -137,15 +137,15 @@ resource "aws_lambda_function" "exporter" {
 
   environment {
     variables = {
-      TABLE_NAME           = var.table_name
-      GH_OWNER             = var.repo_owner
-      GH_REPO              = var.repo_name
-      GH_BRANCH            = var.branch
-      GH_PATH              = "data/observations.json"
-      GH_TOKEN_PARAM_NAME  = var.param_name
-      DDB_PROJECTION       = "id,#d,HNEIGEF,NEIGETOT,NEIGETOT06"
-      MAX_JSON_MB          = "100"
-      FALLBACK_GZ_PATH     = "data/observations.json.gz"
+      TABLE_NAME          = var.table_name
+      GH_OWNER            = var.repo_owner
+      GH_REPO             = var.repo_name
+      GH_BRANCH           = var.branch
+      GH_PATH             = "data/observations.json"
+      GH_TOKEN_PARAM_NAME = var.param_name
+      DDB_PROJECTION      = "id,#d,HNEIGEF,NEIGETOT,NEIGETOT06"
+      MAX_JSON_MB         = "100"
+      FALLBACK_GZ_PATH    = "data/observations.json.gz"
     }
   }
 
