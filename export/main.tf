@@ -132,7 +132,6 @@ resource "aws_lambda_function" "exporter" {
 
   environment {
     variables = {
-<<<<<<< Updated upstream
       TABLE_NAME          = var.table_name
       GH_OWNER            = var.repo_owner
       GH_REPO             = var.repo_name
@@ -142,17 +141,6 @@ resource "aws_lambda_function" "exporter" {
       DDB_PROJECTION      = "id,#d,HNEIGEF,NEIGETOT,NEIGETOT06"
       MAX_JSON_MB         = "100"
       FALLBACK_GZ_PATH    = "data/observations.json.gz"
-=======
-      TABLE_NAME           = var.table_name
-      GH_OWNER             = var.repo_owner
-      GH_REPO              = var_repo_name
-      GH_BRANCH            = var.branch
-      GH_PATH              = "data/observations.json"
-      GH_TOKEN_PARAM_NAME  = var.param_name
-      DDB_PROJECTION       = "id,#d,HNEIGEF,NEIGETOT,NEIGETOT06"
-      MAX_JSON_MB          = "100"
-      FALLBACK_GZ_PATH     = "data/observations.json.gz"
->>>>>>> Stashed changes
     }
   }
 }
