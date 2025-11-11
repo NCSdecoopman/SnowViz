@@ -81,9 +81,9 @@ resource "aws_iam_role" "lambda_role" {
 
 data "aws_kms_alias" "aws_ssm" { name = "alias/aws/ssm" }
 
-resource "aws_iam_policy" "lambda_policy" {
-  name        = "ddb-export-snowviz-policy"
-  description = "DynamoDB Scan, SSM read, Logs"
+resource "aws_iam_role_policy" "lambda_inline" {
+  name = "ddb-export-snowviz-inline"
+  role = aws_iam_role.lambda_role.id
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
@@ -115,11 +115,6 @@ resource "aws_iam_policy" "lambda_policy" {
   })
 }
 
-resource "aws_iam_role_policy_attachment" "attach" {
-  role       = aws_iam_role.lambda_role.name
-  policy_arn = aws_iam_policy.lambda_policy.arn
-}
-
 ########################
 # Lambda
 ########################
@@ -137,6 +132,7 @@ resource "aws_lambda_function" "exporter" {
 
   environment {
     variables = {
+<<<<<<< Updated upstream
       TABLE_NAME          = var.table_name
       GH_OWNER            = var.repo_owner
       GH_REPO             = var.repo_name
@@ -146,10 +142,19 @@ resource "aws_lambda_function" "exporter" {
       DDB_PROJECTION      = "id,#d,HNEIGEF,NEIGETOT,NEIGETOT06"
       MAX_JSON_MB         = "100"
       FALLBACK_GZ_PATH    = "data/observations.json.gz"
+=======
+      TABLE_NAME           = var.table_name
+      GH_OWNER             = var.repo_owner
+      GH_REPO              = var_repo_name
+      GH_BRANCH            = var.branch
+      GH_PATH              = "data/observations.json"
+      GH_TOKEN_PARAM_NAME  = var.param_name
+      DDB_PROJECTION       = "id,#d,HNEIGEF,NEIGETOT,NEIGETOT06"
+      MAX_JSON_MB          = "100"
+      FALLBACK_GZ_PATH     = "data/observations.json.gz"
+>>>>>>> Stashed changes
     }
   }
-
-  depends_on = [aws_iam_role_policy_attachment.attach]
 }
 
 ########################
