@@ -2,11 +2,11 @@
 import os, json, base64, time
 from decimal import Decimal
 from datetime import datetime, timezone
-import boto3, botocore
+import boto3
 import urllib.request
 
 DDB = boto3.client("dynamodb")
-SECRETS = boto3.client("secretsmanager")
+SSM = boto3.client("ssm") # Secrets Manager est payant alors que SSM Parameter Store est gratuit
 
 def _decimal_to_native(o):
     # Convertit Decimal → int/float pour JSON
@@ -53,9 +53,10 @@ def _scan_all(table, projection=None, filter_ttl=True):
         kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
     return items
 
-def _get_secret_value(arn):
-    v = SECRETS.get_secret_value(SecretId=arn)
-    return v.get("SecretString") or base64.b64decode(v["SecretBinary"]).decode()
+def _get_github_token(param_name: str) -> str:
+    # SecureString nécessite WithDecryption=True
+    r = SSM.get_parameter(Name=param_name, WithDecryption=True)
+    return r["Parameter"]["Value"]
 
 def _github_headers(token):
     return {
@@ -63,15 +64,14 @@ def _github_headers(token):
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "lambda-ddb-exporter"
-    }
-    
+    }    
 
 def _github_get_sha(owner, repo, path, headers, branch):
     # Récupère le SHA courant du fichier pour update. None si absent.
     url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}?ref={branch}"
     req = urllib.request.Request(url, headers=headers, method="GET")
     try:
-        with urllib.request.urlopen(req) as r:
+        with urllib.request.urlopen(req, timeout=20) as r:
             data = json.load(r)
             return data.get("sha")
     except urllib.error.HTTPError as e:
@@ -108,7 +108,7 @@ def lambda_handler(event, context):
     gh_repo = os.environ["GH_REPO"]
     gh_branch = os.environ.get("GH_BRANCH", "main")
     gh_path = os.environ["GH_PATH"]
-    gh_token_arn = os.environ["GH_TOKEN_SECRET_ARN"]
+    gh_token_param = os.environ["GH_TOKEN_PARAM_NAME"]
     max_mb = int(os.getenv("MAX_JSON_MB", "95"))
     gz_path = os.getenv("FALLBACK_GZ_PATH")
 
@@ -123,7 +123,7 @@ def lambda_handler(event, context):
     size_mb = len(data_bytes) / (1024 * 1024)
 
     # 4) Token GitHub
-    token = _get_secret_value(gh_token_arn)
+    token = _get_github_token(gh_token_param)
     headers = _github_headers(token)
 
     # 5) Commits

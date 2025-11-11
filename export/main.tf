@@ -33,9 +33,9 @@ variable "branch" {
   type    = string
   default = "main"
 }
-variable "secret_name" {
+variable "param_name" {
   type    = string
-  default = "SnowViz-AutoUpdate-AWS"
+  default = "/snowviz/github/pat"  # ex. SSM path
 }
 # Active le déclencheur EventBridge quotidien à 07:00 UTC si true -var="enable_schedule=true"
 variable "enable_schedule" {
@@ -61,9 +61,7 @@ data "archive_file" "lambda_zip" {
 resource "aws_cloudwatch_log_group" "lg" {
   name              = "/aws/lambda/ddb-export-observations-to-github"
   retention_in_days = 7
-  # crée le log group avant toute exécution de la Lambda
-  depends_on   = [aws_lambda_function.exporter]
-  skip_destroy = true
+  skip_destroy      = true
 }
 
 ########################
@@ -81,29 +79,37 @@ resource "aws_iam_role" "lambda_role" {
   })
 }
 
+data "aws_kms_alias" "aws_ssm" { name = "alias/aws/ssm" }
+
 resource "aws_iam_policy" "lambda_policy" {
   name        = "ddb-export-snowviz-policy"
-  description = "DynamoDB Scan, Secrets read, Logs"
+  description = "DynamoDB Scan, SSM read, Logs"
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
       {
-        Sid : "DdbScan",
-        Effect : "Allow",
-        Action : ["dynamodb:Scan"],
-        Resource : "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.me.account_id}:table/${var.table_name}"
+        Sid   = "DdbScan",
+        Effect= "Allow",
+        Action= ["dynamodb:Scan"],
+        Resource = "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.me.account_id}:table/${var.table_name}"
       },
       {
-        Sid : "SecretsRead",
-        Effect : "Allow",
-        Action : ["secretsmanager:GetSecretValue"],
-        Resource : "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.me.account_id}:secret:${var.secret_name}*"
+        Sid   = "SsmRead",
+        Effect= "Allow",
+        Action= ["ssm:GetParameter","ssm:GetParameters"],
+        Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.me.account_id}:parameter${var.param_name}"
       },
       {
-        Sid : "Logs",
-        Effect : "Allow",
-        Action : ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
-        Resource : "*"
+        Sid   = "KmsDecryptForSSM",
+        Effect= "Allow",
+        Action= ["kms:Decrypt"],
+        Resource = data.aws_kms_alias.aws_ssm.target_key_arn
+      },
+      {
+        Sid   = "Logs",
+        Effect= "Allow",
+        Action= ["logs:CreateLogGroup","logs:CreateLogStream","logs:PutLogEvents"],
+        Resource = "*"
       }
     ]
   })
@@ -131,15 +137,15 @@ resource "aws_lambda_function" "exporter" {
 
   environment {
     variables = {
-      TABLE_NAME          = var.table_name
-      GH_OWNER            = var.repo_owner
-      GH_REPO             = var.repo_name
-      GH_BRANCH           = var.branch
-      GH_PATH             = "data/observations.json"
-      GH_TOKEN_SECRET_ARN = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.me.account_id}:secret:${var.secret_name}"
-      DDB_PROJECTION      = "id,#d,HNEIGEF,NEIGETOT,NEIGETOT06"
-      MAX_JSON_MB         = "100"
-      FALLBACK_GZ_PATH    = "data/observations.json.gz"
+      TABLE_NAME           = var.table_name
+      GH_OWNER             = var.repo_owner
+      GH_REPO              = var.repo_name
+      GH_BRANCH            = var.branch
+      GH_PATH              = "data/observations.json"
+      GH_TOKEN_PARAM_NAME  = var.param_name
+      DDB_PROJECTION       = "id,#d,HNEIGEF,NEIGETOT,NEIGETOT06"
+      MAX_JSON_MB          = "100"
+      FALLBACK_GZ_PATH     = "data/observations.json.gz"
     }
   }
 
@@ -161,6 +167,8 @@ resource "aws_cloudwatch_event_target" "tgt" {
   target_id = "lambda"
   arn       = aws_lambda_function.exporter.arn
 }
+
+resource "random_id" "sid" { byte_length = 4 }
 
 resource "aws_lambda_permission" "allow_events_daily" {
   statement_id  = "AllowFromEvents-ddb-export-observations-daily-${md5(timestamp())}" # Génère un ID unique
