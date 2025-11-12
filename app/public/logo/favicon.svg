@@ -1,10 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
-  <g stroke="#000" stroke-width="4" stroke-linecap="round" fill="none">
+<svg width="80" height="80" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg">
+  <!-- Flocon minimal agrandi -->
+  <g stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" fill="none"
+     transform="matrix(1.8 0 0 1.8 -32 -38.4)">
     <g id="arm">
       <line x1="40" y1="26" x2="40" y2="62"/>
       <line x1="36" y1="32" x2="44" y2="32"/>
       <line x1="36" y1="56" x2="44" y2="56"/>
     </g>
+
     <use href="#arm"/>
     <use href="#arm" transform="rotate(60 40 44)"/>
     <use href="#arm" transform="rotate(120 40 44)"/>
