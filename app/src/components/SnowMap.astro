@@ -53,9 +53,9 @@ const { obsUrl, staUrl } = Astro.props as Props;
       const idx = new Map(obs.map(o => [key(String(o.id), o.date), o]));
       for (const s of sta) {
         const id = String(s.id);
-        const serieNEIGETOT06 = allDates.map(d => {
+        const serieNEIGETOT = allDates.map(d => {
           const rec = idx.get(key(id, d));
-          const v = rec?.NEIGETOT06;
+          const v = rec?.NEIGETOT;
           return v === undefined || v === '' ? null : Number(v);
         });
         const serieHNEIGEF = allDates.map(d => {
@@ -63,7 +63,7 @@ const { obsUrl, staUrl } = Astro.props as Props;
           const v = rec?.HNEIGEF;
           return v === undefined || v === '' ? null : Number(v);
         });
-        seriesById.set(id, { NEIGETOT06: serieNEIGETOT06, HNEIGEF: serieHNEIGEF });
+        seriesById.set(id, { NEIGETOT: serieNEIGETOT, HNEIGEF: serieHNEIGEF });
       }
     }
 
@@ -74,7 +74,7 @@ const { obsUrl, staUrl } = Astro.props as Props;
       .map(x => {
         const s = staMap.get(String(x.id)); if (!s) return null;
         return { id:String(x.id), nom:s.nom, lat:s.lat, lon:s.lon, alt:s.alt,
-                 NEIGETOT06:num(x.NEIGETOT06), HNEIGEF:num(x.HNEIGEF), date:x.date };
+                 NEIGETOT:num(x.NEIGETOT), HNEIGEF:num(x.HNEIGEF), date:x.date };
       })
       .filter(Boolean);
 
@@ -229,7 +229,7 @@ const { obsUrl, staUrl } = Astro.props as Props;
     });
 
     // Couleurs
-    const key = 'NEIGETOT06';
+    const key = 'NEIGETOT';
     const vals = rows.map(r => r[key] ?? 0).filter(Number.isFinite);
     const vmin = Math.min(...vals, 0);
     const vmax = Math.max(...vals, 1);
@@ -238,7 +238,7 @@ const { obsUrl, staUrl } = Astro.props as Props;
       features: rows.map(r => ({
         type: 'Feature',
         geometry: { type: 'Point', coordinates: [r.lon, r.lat] },
-        properties: { id:r.id, nom:r.nom, alt:r.alt, date:r.date, NEIGETOT06:r.NEIGETOT06, HNEIGEF:r.HNEIGEF, v:r[key] ?? 0 }
+        properties: { id:r.id, nom:r.nom, alt:r.alt, date:r.date, NEIGETOT:r.NEIGETOT, HNEIGEF:r.HNEIGEF, v:r[key] ?? 0 }
       }))
     };
     function stops(min, max, palette){
@@ -329,12 +329,12 @@ const { obsUrl, staUrl } = Astro.props as Props;
 
         const html = `<b>${p.nom}</b> (${fmt(Number(p.alt))} m)
           <br/>${fmtDatePlus1(p.date)}
-          <br/>Hauteur à 6h : ${fmt(Number(p.NEIGETOT06))} cm
+          <br/>Hauteur à 6h : ${fmt(Number(p.NEIGETOT))} cm
           <br/>Neige fraîche : ${fmt(Number(p.HNEIGEF))} cm`;
         new maplibregl.Popup({ closeButton:true }).setLngLat(e.lngLat).setHTML(html).addTo(map);
 
         const ser = seriesById.get(String(p.id));   // <- utiliser le même nom
-        if (ser) renderChart(p.nom, ser.NEIGETOT06, ser.HNEIGEF);
+        if (ser) renderChart(p.nom, ser.NEIGETOT, ser.HNEIGEF);
       });
 
     });
